@@ -39,6 +39,14 @@ git pull origin dev
 npm install
 ```
 
+### Set up .env file
+
+```sh
+cp .env.example .env
+```
+
+Then paste in the env contents for dev, the details are saved in Security Aspects folder in the team project.
+
 ### Compile and Hot-Reload for Development
 
 ```sh
