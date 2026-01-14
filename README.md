@@ -16,29 +16,28 @@ We use **rebase** to keep history clean and linear.
 
 ---
 
-## Branch Rules (must follow)
+## Branch Rules
 
-1. ❌ Do **not** push directly to `main` or `dev`.
-2. ✅ Always work on a **feature branch** created from `dev`.
-3. ✅ Every change goes through a **Pull Request (PR)** into `dev`.
-4. ✅ Keep feature branches rebased onto `dev` (linear history).
-5. ✅ `main` is updated **only** when `dev` is stable and validated.
+1. Work on a **feature branch** created from `dev`.
+2. Every change goes through a **Pull Request (PR)** into `dev`.
+3. Keep feature branches rebased onto `dev` (linear history).
+4. `main` is updated **only** when `dev` is stable and validated.
 
 ---
 
 ## One-time Setup (recommended)
 
-````bash
+```bash
 git fetch origin
 git checkout dev
 git pull origin dev
-
+```
 
 ## Project Setup
 
 ```sh
 npm install
-````
+```
 
 ### Compile and Hot-Reload for Development
 
