@@ -30,11 +30,14 @@ const items = computed(() => [
 
 <template>
   <MegaMenu
-    class="rounded-full border border-black/10 bg-white/90 px-4 py-2 shadow-xl backdrop-blur"
+    class="w-full rounded-full border border-black/10 bg-white/90 px-4 py-2 shadow-xl backdrop-blur"
     :model="items"
     :pt="{
-      root: { class: 'rounded-full border-none bg-transparent' },
-      menu: { class: 'gap-2' },
+      root: {
+        class: 'w-full rounded-full border-none bg-transparent flex items-center justify-between',
+      },
+      start: { class: 'flex items-center' },
+      rootList: { class: 'flex items-center gap-2' },
       submenu: { class: 'rounded-2xl border border-black/10 bg-white shadow-lg' },
       item: { class: 'rounded-full' },
       action: {
