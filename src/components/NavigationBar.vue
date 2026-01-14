@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MegaMenu from 'primevue/megamenu'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const items = computed(() => [
   {
@@ -25,6 +27,37 @@ const items = computed(() => [
       }
     },
   },
+  ...(authStore.isAuthenticated
+    ? [
+        {
+          label: 'Logout',
+          icon: 'pi pi-sign-out',
+          command: async () => {
+            await authStore.logout()
+            router.push('/login')
+          },
+        },
+      ]
+    : [
+        {
+          label: 'Login',
+          icon: 'pi pi-sign-in',
+          command: () => {
+            if (route.path !== '/login') {
+              router.push('/login')
+            }
+          },
+        },
+        {
+          label: 'Register',
+          icon: 'pi pi-user-plus',
+          command: () => {
+            if (route.path !== '/register') {
+              router.push('/register')
+            }
+          },
+        },
+      ]),
 ])
 </script>
 

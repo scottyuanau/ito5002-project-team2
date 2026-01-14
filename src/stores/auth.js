@@ -1,0 +1,81 @@
+import { defineStore } from 'pinia'
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from 'firebase/auth'
+import { auth, missingKeys } from '../firebase'
+
+const getDisplayName = (user) => {
+  if (!user) {
+    return ''
+  }
+  if (user.displayName) {
+    return user.displayName
+  }
+  if (user.email) {
+    return user.email.split('@')[0]
+  }
+  return ''
+}
+
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    user: null,
+    ready: false,
+    error: null,
+  }),
+  getters: {
+    displayName: (state) => getDisplayName(state.user),
+    isAuthenticated: (state) => Boolean(state.user),
+    isConfigured: () => Boolean(auth) && missingKeys.length === 0,
+  },
+  actions: {
+    init() {
+      if (!auth || missingKeys.length > 0) {
+        this.error = 'Firebase auth is not configured. Check your .env values.'
+        this.ready = true
+        return
+      }
+      onAuthStateChanged(
+        auth,
+        (user) => {
+          this.user = user
+          this.ready = true
+        },
+        (err) => {
+          this.error = err?.message ?? 'Failed to initialize authentication.'
+          this.ready = true
+        }
+      )
+    },
+    async register({ name, email, password }) {
+      if (!auth) {
+        throw new Error('Firebase auth is not configured.')
+      }
+      const credential = await createUserWithEmailAndPassword(auth, email, password)
+      if (name) {
+        await updateProfile(credential.user, { displayName: name })
+      }
+      this.user = credential.user
+      return credential.user
+    },
+    async login({ email, password }) {
+      if (!auth) {
+        throw new Error('Firebase auth is not configured.')
+      }
+      const credential = await signInWithEmailAndPassword(auth, email, password)
+      this.user = credential.user
+      return credential.user
+    },
+    async logout() {
+      if (!auth) {
+        return
+      }
+      await signOut(auth)
+      this.user = null
+    },
+  },
+})
