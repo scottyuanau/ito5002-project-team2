@@ -1,0 +1,21 @@
+{
+  "collection": "suburbSearchCache",
+  "documentId": "{suburbLower}|{state}",
+  "description": "Caches Nominatim administrative (LGA) lookups for Australian suburbs.",
+  "fields": {
+    "suburb": "string",
+    "state": "string",
+    "country": "string",
+    "query": "string",
+    "results": [
+      {
+        "name": "string",
+        "boundingBox": ["string"],
+        "lat": "string",
+        "lon": "string"
+      }
+    ],
+    "updatedAt": "timestamp",
+    "source": "string"
+  }
+}
