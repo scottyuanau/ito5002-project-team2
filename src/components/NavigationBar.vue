@@ -40,20 +40,11 @@ const items = computed(() => [
       ]
     : [
         {
-          label: 'Login',
+          label: 'Login / Register',
           icon: 'pi pi-sign-in',
           command: () => {
             if (route.path !== '/login') {
               router.push('/login')
-            }
-          },
-        },
-        {
-          label: 'Register',
-          icon: 'pi pi-user-plus',
-          command: () => {
-            if (route.path !== '/register') {
-              router.push('/register')
             }
           },
         },
