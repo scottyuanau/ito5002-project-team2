@@ -16,6 +16,15 @@ const normalizeSuburb = (suburb) => suburb.trim().toLowerCase();
  * - state: enum of NSW, VIC, ACT, QLD, TAS, WA, NT, SA (required)
  */
 module.exports = onRequest(async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
   if (req.method !== "GET") {
     res.status(405).json({error: "Method not allowed. Use GET."});
     return;

@@ -1,6 +1,15 @@
 const {onRequest} = require("firebase-functions/https");
 const logger = require("firebase-functions/logger");
 const AIR_QUALITY_ENDPOINT = "https://air-quality-api.open-meteo.com/v1/air-quality";
+const NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search";
+const COUNTRY = "australia";
+const ALLOWED_STATES = new Set(["NSW", "VIC", "ACT", "QLD", "TAS", "WA", "NT", "SA"]);
+
+const setCorsHeaders = (res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+};
 
 const parseNumber = (value) => {
   const num = Number.parseFloat(value);
@@ -62,6 +71,39 @@ const isWithinFutureLimit = (date, maxDays) => {
   return date <= latest;
 };
 
+const fetchLgaCoordinates = async (suburb, state) => {
+  const query = `${suburb},${state.toLowerCase()},${COUNTRY}`;
+  const url = `${NOMINATIM_ENDPOINT}?q=${encodeURIComponent(query)}&format=jsonv2`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "ito5002-air-quality/1.0",
+      Accept: "application/json",
+    },
+    signal: controller.signal,
+  });
+
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch suburb coordinates.");
+  }
+
+  const payload = await response.json();
+  const results = Array.isArray(payload)
+    ? payload.filter((item) => item && item.type === "administrative")
+    : [];
+  const first = results[0];
+
+  if (!first || first.lat === undefined || first.lon === undefined) {
+    throw new Error("No LGA coordinate data found.");
+  }
+
+  return {lat: first.lat, lon: first.lon};
+};
+
 /**
  * Lookup air quality data for a given coordinate using Open-Meteo.
  * Query params:
@@ -84,22 +126,61 @@ const isWithinFutureLimit = (date, maxDays) => {
  * - apikey: string (optional)
  */
 module.exports = onRequest(async (req, res) => {
+  setCorsHeaders(res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
   if (req.method !== "GET") {
     res.status(405).json({error: "Method not allowed. Use GET."});
     return;
   }
 
+  const suburb = typeof req.query.suburb === "string" ? req.query.suburb.trim() : "";
+  const state = typeof req.query.state === "string" ? req.query.state.trim().toUpperCase() : "";
   const latitudeRaw = typeof req.query.latitude === "string" ? req.query.latitude : "";
   const longitudeRaw = typeof req.query.longitude === "string" ? req.query.longitude : "";
-  const latitudeList = parseCoordinateList(latitudeRaw, "latitude", -90, 90);
-  if (latitudeList.error) {
-    res.status(400).json({error: latitudeList.error});
-    return;
-  }
 
-  const longitudeList = parseCoordinateList(longitudeRaw, "longitude", -180, 180);
-  if (longitudeList.error) {
-    res.status(400).json({error: longitudeList.error});
+  let latitudeValue = "";
+  let longitudeValue = "";
+
+  if (latitudeRaw || longitudeRaw) {
+    const latitudeList = parseCoordinateList(latitudeRaw, "latitude", -90, 90);
+    if (latitudeList.error) {
+      res.status(400).json({error: latitudeList.error});
+      return;
+    }
+
+    const longitudeList = parseCoordinateList(longitudeRaw, "longitude", -180, 180);
+    if (longitudeList.error) {
+      res.status(400).json({error: longitudeList.error});
+      return;
+    }
+
+    latitudeValue = latitudeList.value;
+    longitudeValue = longitudeList.value;
+  } else if (suburb && state) {
+    if (!ALLOWED_STATES.has(state)) {
+      res.status(400).json({
+        error: "state must be one of NSW, VIC, ACT, QLD, TAS, WA, NT, SA.",
+      });
+      return;
+    }
+
+    try {
+      const coords = await fetchLgaCoordinates(suburb, state);
+      latitudeValue = String(coords.lat);
+      longitudeValue = String(coords.lon);
+    } catch (error) {
+      logger.error("Suburb LGA lookup failed", {error});
+      res.status(404).json({error: "Unable to resolve suburb coordinates."});
+      return;
+    }
+  } else {
+    res.status(400).json({
+      error: "Provide latitude/longitude or suburb/state parameters.",
+    });
     return;
   }
 
@@ -237,8 +318,8 @@ module.exports = onRequest(async (req, res) => {
 
   try {
     const params = new URLSearchParams({
-      latitude: latitudeList.value,
-      longitude: longitudeList.value,
+      latitude: latitudeValue,
+      longitude: longitudeValue,
     });
 
     if (hourly) {
