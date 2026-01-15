@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updateProfile,
 } from 'firebase/auth'
@@ -67,6 +69,15 @@ export const useAuthStore = defineStore('auth', {
         throw new Error('Firebase auth is not configured.')
       }
       const credential = await signInWithEmailAndPassword(auth, email, password)
+      this.user = credential.user
+      return credential.user
+    },
+    async loginWithGoogle() {
+      if (!auth) {
+        throw new Error('Firebase auth is not configured.')
+      }
+      const provider = new GoogleAuthProvider()
+      const credential = await signInWithPopup(auth, provider)
       this.user = credential.user
       return credential.user
     },

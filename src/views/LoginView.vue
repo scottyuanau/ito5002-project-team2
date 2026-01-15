@@ -41,6 +41,9 @@ const mapAuthError = (err) => {
   if (code === 'auth/invalid-credential') {
     return 'Invalid email or password.'
   }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Google sign-in was cancelled.'
+  }
   if (code === 'auth/too-many-requests') {
     return 'Too many attempts. Please try again later.'
   }
@@ -57,6 +60,16 @@ const onSubmit = async ({ valid, values }) => {
       email: values.email?.trim(),
       password: values.password,
     })
+    router.push('/')
+  } catch (err) {
+    submitError.value = mapAuthError(err)
+  }
+}
+
+const onGoogleLogin = async () => {
+  submitError.value = ''
+  try {
+    await authStore.loginWithGoogle()
     router.push('/')
   } catch (err) {
     submitError.value = mapAuthError(err)
@@ -121,6 +134,20 @@ const onSubmit = async ({ valid, values }) => {
 
         <Button type="submit" label="Sign in" class="w-full" />
       </Form>
+
+      <div class="mt-6 flex items-center gap-3 text-xs text-slate-500">
+        <span class="h-px flex-1 bg-slate-200"></span>
+        Or continue with
+        <span class="h-px flex-1 bg-slate-200"></span>
+      </div>
+
+      <Button
+        label="Google"
+        icon="pi pi-google"
+        class="mt-4 w-full"
+        severity="secondary"
+        @click="onGoogleLogin"
+      />
 
       <p class="mt-6 text-sm text-slate-600">
         Don’t have an account?
