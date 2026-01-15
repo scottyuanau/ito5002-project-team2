@@ -72,9 +72,13 @@ const items = computed(() => [
     }"
   >
     <template #start>
-      <span class="px-3 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-900">
-        Logo
-      </span>
+      <RouterLink
+        to="/"
+        class="flex items-center gap-2 px-3 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-900"
+      >
+        <img src="/logo.png" alt="AirScape logo" class="h-6 w-6" />
+        <span>AirScape</span>
+      </RouterLink>
     </template>
   </MegaMenu>
 </template>
