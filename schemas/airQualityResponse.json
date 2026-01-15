@@ -1,0 +1,22 @@
+{
+  "function": "lookupAirQuality",
+  "description": "Open-Meteo air quality response payload returned by lookupAirQuality.",
+  "fields": {
+    "source": "string",
+    "data": {
+      "latitude": "number",
+      "longitude": "number",
+      "generationtime_ms": "number",
+      "utc_offset_seconds": "number",
+      "timezone": "string",
+      "timezone_abbreviation": "string",
+      "elevation": "number",
+      "hourly_units": "object",
+      "hourly": "object"
+    }
+  },
+  "notes": [
+    "When multiple coordinates are requested, data can be an array of response objects.",
+    "The hourly and hourly_units objects include keys based on requested variables."
+  ]
+}
