@@ -55,7 +55,6 @@ const airQualityRows = ref([
   { pollutant: 'NO2', value: 'N/A', unit: 'ug/m3' },
   { pollutant: 'SO2', value: 'N/A', unit: 'ug/m3' },
   { pollutant: 'O3', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'NH3', value: 'N/A', unit: 'ug/m3' },
 ])
 
 const suburbName = computed(() => {
@@ -150,7 +149,6 @@ const buildAirQualityRows = (payload) => {
     { key: 'nitrogen_dioxide', label: 'NO2' },
     { key: 'sulphur_dioxide', label: 'SO2' },
     { key: 'ozone', label: 'O3' },
-    { key: 'ammonia', label: 'NH3' },
   ]
 
   return rows.map(({ key, label }) => {
@@ -197,11 +195,11 @@ const loadAirQuality = async () => {
     airUrl.searchParams.set('state', state.toUpperCase())
     airUrl.searchParams.set(
       'current',
-      'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,ammonia',
+      'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
     )
     airUrl.searchParams.set(
       'hourly',
-      'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,ammonia',
+      'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
     )
 
     const airResponse = await fetch(airUrl)
