@@ -6,6 +6,32 @@
       <p v-if="stateLabel" class="text-sm text-slate-500">State: {{ stateLabel }}</p>
     </header>
 
+    <section class="rounded-2xl border border-slate-200 bg-white p-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="space-y-1">
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-400">
+            Local government area
+          </p>
+          <p class="text-lg font-semibold text-slate-900">
+            {{ lgaName || 'Unavailable' }}
+          </p>
+          <p v-if="lgaLoading" class="text-sm text-slate-500">Looking up LGA details...</p>
+          <p v-else-if="lgaError" class="text-sm text-red-600">{{ lgaError }}</p>
+        </div>
+        <div class="flex flex-col gap-2 sm:items-end">
+          <Button
+            v-if="authStore.isAuthenticated"
+            :label="isSubscribed ? 'Unsubscribe' : 'Subscribe'"
+            :severity="isSubscribed ? 'secondary' : 'primary'"
+            :loading="isUpdatingSubscription"
+            :disabled="!canToggleSubscription"
+            @click="handleSubscriptionToggle"
+          />
+          <p v-else class="text-xs text-slate-500">Sign in to manage LGA subscriptions.</p>
+        </div>
+      </div>
+    </section>
+
     <Tabs v-model:value="activeTab" class="w-full">
       <TabList>
         <Tab value="air">Air Quality</Tab>
@@ -36,6 +62,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import Button from 'primevue/button'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
@@ -43,11 +71,19 @@ import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
+import { db } from '../firebase'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const activeTab = ref('air')
 const loading = ref(false)
 const errorMessage = ref('')
+const lgaName = ref('')
+const lgaLoading = ref(false)
+const lgaError = ref('')
+const isSubscribed = ref(false)
+const isUpdatingSubscription = ref(false)
 const airQualityRows = ref([
   { pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
   { pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
@@ -74,6 +110,14 @@ const stateLabel = computed(() => {
   const state = typeof route.query.state === 'string' ? route.query.state : ''
   return state ? state.toUpperCase() : ''
 })
+const isDbReady = computed(() => Boolean(db))
+const canToggleSubscription = computed(
+  () =>
+    authStore.isAuthenticated &&
+    isDbReady.value &&
+    Boolean(lgaName.value) &&
+    !isUpdatingSubscription.value
+)
 
 const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -112,6 +156,28 @@ const writeCache = (cacheKey, data) => {
 }
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
+const getLgaLookupUrl = () => import.meta.env.VITE_FIREBASE_LGA_LOOKUP_URL || ''
+
+// Normalize an LGA name for deterministic subscription document IDs.
+const toLgaSlug = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+// Extract a display-friendly LGA name from lookup results.
+const getLgaDisplayName = (results) => {
+  if (!Array.isArray(results) || results.length === 0) {
+    return ''
+  }
+  const first = results[0]
+  const raw = typeof first?.name === 'string' ? first.name : ''
+  if (!raw) {
+    return ''
+  }
+  const primary = raw.split(',')[0]?.trim()
+  return primary || raw
+}
 
 const buildAirQualityRows = (payload) => {
   if (!payload || typeof payload !== 'object') {
@@ -219,11 +285,110 @@ const loadAirQuality = async () => {
   }
 }
 
+// Lookup LGA details for the current suburb + state.
+const loadLga = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+  const lgaLookupUrl = getLgaLookupUrl()
+
+  lgaError.value = ''
+  lgaName.value = ''
+
+  if (!suburbQuery || !state) {
+    lgaError.value = 'Missing suburb or state. Please search again.'
+    return
+  }
+
+  if (!lgaLookupUrl) {
+    lgaError.value = 'Missing LGA lookup configuration.'
+    return
+  }
+
+  lgaLoading.value = true
+  try {
+    const lgaUrl = new URL(lgaLookupUrl)
+    lgaUrl.searchParams.set('suburb', suburbQuery)
+    lgaUrl.searchParams.set('state', state.toUpperCase())
+    const response = await fetch(lgaUrl)
+    if (!response.ok) {
+      throw new Error('Failed to load LGA data.')
+    }
+    const payload = await response.json()
+    lgaName.value = getLgaDisplayName(payload.data || payload)
+    if (!lgaName.value) {
+      lgaError.value = 'No LGA data found for this suburb.'
+    }
+  } catch (error) {
+    lgaError.value = error instanceof Error ? error.message : 'Unable to load LGA data.'
+  } finally {
+    lgaLoading.value = false
+  }
+}
+
+// Refresh subscription status for the current user/LGA.
+const refreshSubscriptionStatus = async () => {
+  if (!isDbReady.value || !authStore.user?.uid || !lgaName.value) {
+    isSubscribed.value = false
+    return
+  }
+  try {
+    const docId = `${authStore.user.uid}_${toLgaSlug(lgaName.value)}`
+    const snapshot = await getDoc(doc(db, 'lgaSubscriptions', docId))
+    isSubscribed.value = snapshot.exists()
+  } catch {
+    isSubscribed.value = false
+  }
+}
+
+// Toggle LGA subscription for the current user.
+const handleSubscriptionToggle = async () => {
+  if (!canToggleSubscription.value) {
+    return
+  }
+  const userId = authStore.user?.uid
+  const state = stateLabel.value
+  if (!userId || !lgaName.value || !state) {
+    return
+  }
+  const docId = `${userId}_${toLgaSlug(lgaName.value)}`
+  isUpdatingSubscription.value = true
+  try {
+    const docRef = doc(db, 'lgaSubscriptions', docId)
+    if (isSubscribed.value) {
+      await deleteDoc(docRef)
+      isSubscribed.value = false
+      return
+    }
+    await setDoc(docRef, {
+      userId,
+      lgaName: lgaName.value,
+      lgaSlug: toLgaSlug(lgaName.value),
+      state,
+      createdAt: serverTimestamp(),
+    })
+    isSubscribed.value = true
+  } catch (error) {
+    lgaError.value = error instanceof Error ? error.message : 'Unable to update subscription.'
+  } finally {
+    isUpdatingSubscription.value = false
+  }
+}
+
 onMounted(loadAirQuality)
+onMounted(loadLga)
+onMounted(refreshSubscriptionStatus)
 watch(
   () => [route.params.suburb, route.query.state],
   () => {
     loadAirQuality()
+    loadLga()
   },
+)
+watch(
+  () => [authStore.user?.uid, lgaName.value],
+  () => {
+    refreshSubscriptionStatus()
+  }
 )
 </script>

@@ -14,8 +14,60 @@
       </TabList>
       <TabPanels>
         <TabPanel value="newsletter">
-          <div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-            More contents to be added to the Newsletter tab.
+          <div class="space-y-4">
+            <Message v-if="!authStore.isAuthenticated" severity="warn" :closable="false">
+              Sign in to manage your LGA subscriptions.
+            </Message>
+
+            <Message v-else-if="!isDbReady" severity="warn" :closable="false">
+              Firestore is not configured. Check your .env settings.
+            </Message>
+
+            <Message v-if="subscriptionsError" severity="error" :closable="false">
+              {{ subscriptionsError }}
+            </Message>
+
+            <div v-if="authStore.isAuthenticated" class="space-y-3">
+              <div
+                v-if="subscriptionsLoading"
+                class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
+              >
+                Loading subscriptions...
+              </div>
+
+              <div
+                v-else-if="subscriptions.length === 0"
+                class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
+              >
+                No LGA subscriptions yet. Subscribe from a suburb page.
+              </div>
+
+              <div v-else class="space-y-3">
+                <div
+                  v-for="subscription in subscriptions"
+                  :key="subscription.id"
+                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                >
+                  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="space-y-1">
+                      <p class="text-sm font-semibold text-slate-900">{{ subscription.lgaName }}</p>
+                      <p class="text-xs text-slate-500">
+                        {{ subscription.state }} ·
+                        {{ formatTimestamp(subscription.createdAt) }}
+                      </p>
+                    </div>
+                    <Button
+                      label="Unsubscribe"
+                      severity="secondary"
+                      size="small"
+                      :loading="unsubscribingId === subscription.id"
+                      :disabled="unsubscribingId === subscription.id"
+                      @click="handleUnsubscribe(subscription.id)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </TabPanel>
         <TabPanel value="settings">
@@ -161,8 +213,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Password from 'primevue/password'
@@ -190,6 +242,11 @@ const enquiriesError = ref('')
 const deletingId = ref(null)
 const isDbReady = computed(() => Boolean(db))
 let unsubscribeEnquiries = null
+const subscriptions = ref([])
+const subscriptionsLoading = ref(true)
+const subscriptionsError = ref('')
+const unsubscribingId = ref(null)
+let unsubscribeSubscriptions = null
 const userEmail = computed(() => authStore.user?.email ?? '')
 const canUpdatePassword = computed(
   () => authStore.user?.providerData?.some((provider) => provider.providerId === 'password')
@@ -237,6 +294,39 @@ const setupEnquiriesListener = () => {
   )
 }
 
+// Listen for LGA subscription updates for the current user.
+const setupSubscriptionListener = () => {
+  if (!db || !authStore.user?.uid) {
+    subscriptionsLoading.value = false
+    subscriptions.value = []
+    return
+  }
+  subscriptionsLoading.value = true
+  const subscriptionQuery = query(
+    collection(db, 'lgaSubscriptions'),
+    where('userId', '==', authStore.user.uid)
+  )
+  unsubscribeSubscriptions = onSnapshot(
+    subscriptionQuery,
+    (snapshot) => {
+      const items = snapshot.docs.map((docRef) => ({
+        id: docRef.id,
+        ...docRef.data(),
+      }))
+      subscriptions.value = items.sort((a, b) => {
+        const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0)
+        const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0)
+        return bTime - aTime
+      })
+      subscriptionsLoading.value = false
+    },
+    (err) => {
+      subscriptionsError.value = err?.message ?? 'Unable to load subscriptions.'
+      subscriptionsLoading.value = false
+    }
+  )
+}
+
 // Delete a specific enquiry document by id.
 const handleDeleteEnquiry = async (enquiryId) => {
   if (!db || deletingId.value) {
@@ -249,6 +339,21 @@ const handleDeleteEnquiry = async (enquiryId) => {
     enquiriesError.value = err?.message ?? 'Unable to delete the enquiry.'
   } finally {
     deletingId.value = null
+  }
+}
+
+// Unsubscribe from an LGA by deleting the subscription document.
+const handleUnsubscribe = async (subscriptionId) => {
+  if (!db || unsubscribingId.value) {
+    return
+  }
+  unsubscribingId.value = subscriptionId
+  try {
+    await deleteDoc(doc(db, 'lgaSubscriptions', subscriptionId))
+  } catch (err) {
+    subscriptionsError.value = err?.message ?? 'Unable to unsubscribe.'
+  } finally {
+    unsubscribingId.value = null
   }
 }
 
@@ -315,11 +420,27 @@ const handlePasswordUpdate = async () => {
 
 onMounted(() => {
   setupEnquiriesListener()
+  setupSubscriptionListener()
 })
 
 onBeforeUnmount(() => {
   if (unsubscribeEnquiries) {
     unsubscribeEnquiries()
   }
+  if (unsubscribeSubscriptions) {
+    unsubscribeSubscriptions()
+  }
 })
+
+watch(
+  () => authStore.user?.uid,
+  () => {
+    if (unsubscribeSubscriptions) {
+      unsubscribeSubscriptions()
+    }
+    subscriptionsError.value = ''
+    subscriptions.value = []
+    setupSubscriptionListener()
+  }
+)
 </script>

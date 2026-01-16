@@ -1,0 +1,12 @@
+{
+  "collection": "lgaSubscriptions",
+  "documentId": "{userId}_{lgaSlug}",
+  "description": "Stores LGA newsletter subscriptions per authenticated user.",
+  "fields": {
+    "userId": "string",
+    "lgaName": "string",
+    "lgaSlug": "string",
+    "state": "string",
+    "createdAt": "timestamp"
+  }
+}
