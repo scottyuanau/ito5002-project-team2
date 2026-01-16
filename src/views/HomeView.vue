@@ -11,6 +11,13 @@
             Save the Environment
           </h1>
           <p class="text-white">for a sustainable community</p>
+          <Button
+            label="Compare Suburbs"
+            class="mt-2"
+            severity="secondary"
+            type="button"
+            @click="handleCompare"
+          />
         </div>
       </div>
     </section>
@@ -53,6 +60,12 @@ const states = ['NSW', 'VIC', 'TAS', 'NT', 'SA', 'WA', 'QLD', 'ACT']
 
 const canSearch = computed(() => suburb.value.trim().length > 0 && selectedState.value)
 
+// Navigate to the suburb comparison page.
+const handleCompare = () => {
+  router.push({ name: 'compare' })
+}
+
+// Navigate to a specific suburb when a valid search is submitted.
 const handleSearch = () => {
   if (!canSearch.value) {
     return

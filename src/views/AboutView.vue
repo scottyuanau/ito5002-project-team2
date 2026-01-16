@@ -1,5 +1,5 @@
 <template>
-  <section class="page-content">
+  <section class="page-content py-6">
     <h1>About page</h1>
   </section>
 </template>
