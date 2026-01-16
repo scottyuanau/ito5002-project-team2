@@ -1,0 +1,14 @@
+{
+  "collection": "enquiries",
+  "documentId": "{autoId}",
+  "description": "Stores contact form enquiries submitted by users.",
+  "fields": {
+    "name": "string",
+    "email": "string",
+    "title": "string",
+    "content": "string",
+    "createdAt": "timestamp",
+    "userId": "string|null",
+    "authEmail": "string|null"
+  }
+}

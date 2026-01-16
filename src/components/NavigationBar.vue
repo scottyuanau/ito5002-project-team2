@@ -30,6 +30,15 @@ const items = computed(() => [
     },
   },
   {
+    label: 'Contact',
+    icon: 'pi pi-envelope',
+    command: () => {
+      if (route.path !== '/contact') {
+        router.push('/contact')
+      }
+    },
+  },
+  {
     label: 'About',
     icon: 'pi pi-info-circle',
     command: () => {
