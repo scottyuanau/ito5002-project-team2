@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-20">
+  <div class="flex w-full flex-col gap-20">
     <section>
       <div class="relative h-96 w-full overflow-hidden shadow-sm md:h-120">
         <img src="/banner.jpg" alt="Environmental banner" class="h-full w-full object-cover" />
