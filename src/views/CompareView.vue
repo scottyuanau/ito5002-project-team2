@@ -410,13 +410,17 @@ const comparisonErrors = computed(() =>
 const skeletonHeader = computed(() => Array.from({ length: compareSuburbs.value.length + 2 }))
 
 // Refresh metrics whenever the selected suburbs change.
-watch(compareSuburbs, () => {
-  errorMessage.value = ''
-  if (compareSuburbs.value.length < 2) {
-    return
-  }
-  loadComparison()
-})
+watch(
+  compareSuburbs,
+  () => {
+    errorMessage.value = ''
+    if (compareSuburbs.value.length < 2) {
+      return
+    }
+    loadComparison()
+  },
+  { deep: true },
+)
 
 // Persist compare results whenever metrics update.
 watch(
