@@ -124,8 +124,87 @@
           </div>
         </TabPanel>
         <TabPanel value="green">
-          <div class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-            Green space data coming soon.
+          <div class="space-y-4">
+            <nav class="flex items-center gap-4 text-sm">
+              <button
+                type="button"
+                class="font-medium transition-colors cursor-pointer"
+                :class="
+                  activeGreenSubtab === 'summary'
+                    ? 'text-slate-900 underline decoration-2 underline-offset-4'
+                    : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
+                "
+                :aria-current="activeGreenSubtab === 'summary' ? 'page' : undefined"
+                @click="activeGreenSubtab = 'summary'"
+              >
+                Summary
+              </button>
+              <button
+                type="button"
+                class="font-medium transition-colors cursor-pointer"
+                :class="
+                  activeGreenSubtab === 'trend'
+                    ? 'text-slate-900 underline decoration-2 underline-offset-4'
+                    : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
+                "
+                :aria-current="activeGreenSubtab === 'trend' ? 'page' : undefined"
+                @click="activeGreenSubtab = 'trend'"
+              >
+                Trend
+              </button>
+            </nav>
+            <div v-if="activeGreenSubtab === 'summary'" class="space-y-4">
+              <p class="text-sm text-slate-500">
+                Historical weather averages over the last 30 days.
+              </p>
+              <p v-if="greenError" class="text-sm text-red-600">{{ greenError }}</p>
+              <DataTable :value="greenSummaryRows" stripedRows class="w-full" :loading="greenLoading">
+                <Column field="metric" header="Metric"></Column>
+                <Column field="value" header="Current"></Column>
+                <Column field="unit" header="Unit"></Column>
+                <Column field="median" header="Median"></Column>
+                <Column field="average" header="Average"></Column>
+                <Column field="minimum" header="Minimum"></Column>
+                <Column field="maximum" header="Maximum"></Column>
+              </DataTable>
+            </div>
+            <div v-else-if="activeGreenSubtab === 'trend'" class="space-y-4">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-sm font-medium text-slate-900">Three-month trend</p>
+                  <p class="text-xs text-slate-500">
+                    Daily averages over the last three months.
+                  </p>
+                </div>
+                <Dropdown
+                  v-model="selectedGreenTrendMetric"
+                  :options="greenTrendMetricOptions"
+                  optionLabel="label"
+                  optionValue="key"
+                  class="w-full sm:w-72"
+                  placeholder="Select metric"
+                  aria-label="Select metric"
+                />
+              </div>
+              <p v-if="greenTrendError" class="text-sm text-red-600">{{ greenTrendError }}</p>
+              <p v-else-if="greenTrendLoading" class="text-sm text-slate-500">
+                Loading trend data...
+              </p>
+              <p
+                v-else-if="!greenTrendSeries.labels.length"
+                class="text-sm text-slate-500"
+              >
+                No trend data available for this suburb yet.
+              </p>
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <Chart
+                  type="line"
+                  :data="greenTrendChartData"
+                  :options="greenTrendChartOptions"
+                  class="h-80 w-full"
+                />
+              </div>
+            </div>
           </div>
         </TabPanel>
       </TabPanels>
@@ -154,16 +233,22 @@ const route = useRoute()
 const authStore = useAuthStore()
 const activeTab = ref('air')
 const activeAirSubtab = ref('summary')
+const activeGreenSubtab = ref('summary')
 const loading = ref(false)
 const errorMessage = ref('')
 const trendLoading = ref(false)
 const trendError = ref('')
+const greenLoading = ref(false)
+const greenError = ref('')
+const greenTrendLoading = ref(false)
+const greenTrendError = ref('')
 const lgaName = ref('')
 const lgaLoading = ref(false)
 const lgaError = ref('')
 const isSubscribed = ref(false)
 const isUpdatingSubscription = ref(false)
 const trendLoaded = ref(false)
+const greenTrendLoaded = ref(false)
 const airQualityRows = ref([
   { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
   { key: 'pm2_5', pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
@@ -182,6 +267,8 @@ const trendMetricOptions = [
 ]
 const selectedTrendMetric = ref('pm2_5')
 const trendSeries = ref({ labels: [], series: {}, units: {} })
+const greenSummaryRows = ref([])
+const greenTrendSeries = ref({ labels: [], series: {}, units: {} })
 
 const suburbName = computed(() => {
   const raw = typeof route.params.suburb === 'string' ? route.params.suburb : ''
@@ -213,11 +300,21 @@ const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
 const CACHE_TTL_MS = 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
 const TREND_CACHE_PREFIX = 'airQualityTrendCache:'
+const HISTORICAL_WEATHER_CACHE_PREFIX = 'historicalWeatherCache:'
+const HISTORICAL_WEATHER_TREND_CACHE_PREFIX = 'historicalWeatherTrendCache:'
+const HISTORICAL_WEATHER_ENDPOINT =
+  'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
+const HISTORICAL_DAYS = 30
+const HISTORICAL_TREND_DAYS = 92
 
 const getCacheKey = (suburbQuery, state) =>
   `${CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 const getTrendCacheKey = (suburbQuery, state) =>
   `${TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+const getHistoricalWeatherCacheKey = (suburbQuery, state) =>
+  `${HISTORICAL_WEATHER_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+const getHistoricalWeatherTrendCacheKey = (suburbQuery, state) =>
+  `${HISTORICAL_WEATHER_TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 
 const readCache = (cacheKey) => {
   const raw = localStorage.getItem(cacheKey)
@@ -322,6 +419,22 @@ const buildAirQualityRows = (payload) => {
   })
 }
 
+const greenMetricOptions = [
+  { key: 'temperature_2m', label: 'Temperature (2 m)', unitFallback: '°C' },
+  { key: 'rain', label: 'Rain', unitFallback: 'mm' },
+  { key: 'vapour_pressure_deficit', label: 'Vapour Pressure Deficit', unitFallback: 'kPa' },
+  { key: 'soil_temperature_0_to_7cm', label: 'Soil Temperature (0-7 cm)', unitFallback: '°C' },
+  { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)', unitFallback: 'm³/m³' },
+]
+const greenTrendMetricOptions = [
+  { key: 'temperature_2m', label: 'Temperature (2 m)' },
+  { key: 'rain', label: 'Rain' },
+  { key: 'vapour_pressure_deficit', label: 'Vapour Pressure Deficit' },
+  { key: 'soil_temperature_0_to_7cm', label: 'Soil Temperature (0-7 cm)' },
+  { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)' },
+]
+const selectedGreenTrendMetric = ref('temperature_2m')
+
 const formatStatValue = (value) => {
   if (!Number.isFinite(value)) {
     return 'N/A'
@@ -348,6 +461,145 @@ const computeSeriesStats = (values) => {
     minimum: sorted[0],
     maximum: sorted[sorted.length - 1],
   }
+}
+
+const formatIsoDate = (date) => date.toISOString().slice(0, 10)
+
+const getHistoricalDateRange = (days) => {
+  const now = new Date()
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const startDate = new Date(todayUtc)
+  startDate.setUTCDate(todayUtc.getUTCDate() - (days - 1))
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(todayUtc),
+  }
+}
+
+const getLatestValue = (values) => {
+  if (!Array.isArray(values)) {
+    return null
+  }
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = values[index]
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue)) {
+      return numericValue
+    }
+  }
+  return null
+}
+
+const buildGreenSummaryRows = (payload) => {
+  const fallback = greenMetricOptions.map(({ key, label, unitFallback }) => ({
+    key,
+    metric: label,
+    value: 'N/A',
+    unit: unitFallback,
+    median: 'N/A',
+    average: 'N/A',
+    minimum: 'N/A',
+    maximum: 'N/A',
+  }))
+
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+
+  return greenMetricOptions.map(({ key, label, unitFallback }) => {
+    const values = Array.isArray(hourly[key]) ? hourly[key] : []
+    const current = getLatestValue(values)
+    const stats = computeSeriesStats(values)
+    return {
+      key,
+      metric: label,
+      value: current === null ? 'N/A' : formatStatValue(current),
+      unit: hourlyUnits[key] || unitFallback,
+      median: stats ? formatStatValue(stats.median) : 'N/A',
+      average: stats ? formatStatValue(stats.average) : 'N/A',
+      minimum: stats ? formatStatValue(stats.minimum) : 'N/A',
+      maximum: stats ? formatStatValue(stats.maximum) : 'N/A',
+    }
+  })
+}
+
+const buildGreenTrendSeries = (payload) => {
+  const fallback = { labels: [], series: {}, units: {} }
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  if (timeList.length === 0) {
+    return fallback
+  }
+
+  const labels = []
+  const labelIndex = new Map()
+  const sums = {}
+  const counts = {}
+  const units = {}
+
+  greenTrendMetricOptions.forEach(({ key }) => {
+    sums[key] = []
+    counts[key] = []
+    units[key] = hourlyUnits[key] || ''
+  })
+
+  timeList.forEach((timeValue, index) => {
+    if (typeof timeValue !== 'string') {
+      return
+    }
+    const day = timeValue.split('T')[0]
+    if (!day) {
+      return
+    }
+    let dayIndex = labelIndex.get(day)
+    if (dayIndex === undefined) {
+      dayIndex = labels.length
+      labelIndex.set(day, dayIndex)
+      labels.push(day)
+      greenTrendMetricOptions.forEach(({ key }) => {
+        sums[key][dayIndex] = 0
+        counts[key][dayIndex] = 0
+      })
+    }
+
+    greenTrendMetricOptions.forEach(({ key }) => {
+      const series = hourly[key]
+      if (!Array.isArray(series)) {
+        return
+      }
+      const value = series[index]
+      if (value === null || value === undefined) {
+        return
+      }
+      const numericValue = Number(value)
+      if (!Number.isFinite(numericValue)) {
+        return
+      }
+      sums[key][dayIndex] += numericValue
+      counts[key][dayIndex] += 1
+    })
+  })
+
+  const series = {}
+  greenTrendMetricOptions.forEach(({ key }) => {
+    series[key] = sums[key].map((total, idx) => {
+      const count = counts[key][idx]
+      if (!count) {
+        return null
+      }
+      return Number((total / count).toFixed(2))
+    })
+  })
+
+  return { labels, series, units }
 }
 
 // Format a YYYY-MM-DD string into a compact label.
@@ -557,6 +809,112 @@ const loadAirQualityTrend = async () => {
   }
 }
 
+const loadHistoricalWeather = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+
+  greenError.value = ''
+
+  if (!suburbQuery || !state) {
+    greenError.value = 'Missing suburb or state. Please search again.'
+    greenSummaryRows.value = buildGreenSummaryRows(null)
+    return
+  }
+
+  const cacheKey = getHistoricalWeatherCacheKey(suburbQuery, state)
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    greenSummaryRows.value = buildGreenSummaryRows(cachedData)
+    return
+  }
+
+  greenLoading.value = true
+
+  try {
+    const { startDate, endDate } = getHistoricalDateRange(HISTORICAL_DAYS)
+    const weatherUrl = new URL(HISTORICAL_WEATHER_ENDPOINT)
+    weatherUrl.searchParams.set('suburb', suburbQuery)
+    weatherUrl.searchParams.set('state', state.toUpperCase())
+    weatherUrl.searchParams.set('start_date', startDate)
+    weatherUrl.searchParams.set('end_date', endDate)
+    weatherUrl.searchParams.set(
+      'hourly',
+      'temperature_2m,rain,vapour_pressure_deficit,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm',
+    )
+    weatherUrl.searchParams.set('timezone', 'auto')
+
+    const response = await fetch(weatherUrl)
+    if (!response.ok) {
+      throw new Error('Failed to fetch historical weather data.')
+    }
+
+    const payload = await response.json()
+    const data = payload.data || payload
+    writeCache(cacheKey, data)
+    greenSummaryRows.value = buildGreenSummaryRows(data)
+  } catch (error) {
+    greenSummaryRows.value = buildGreenSummaryRows(null)
+    greenError.value = error instanceof Error ? error.message : 'Unexpected error.'
+  } finally {
+    greenLoading.value = false
+  }
+}
+
+const loadHistoricalWeatherTrend = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+
+  greenTrendError.value = ''
+
+  if (!suburbQuery || !state) {
+    greenTrendError.value = 'Missing suburb or state. Please search again.'
+    greenTrendSeries.value = { labels: [], series: {}, units: {} }
+    return
+  }
+
+  const cacheKey = getHistoricalWeatherTrendCacheKey(suburbQuery, state)
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    greenTrendSeries.value = buildGreenTrendSeries(cachedData)
+    greenTrendLoaded.value = true
+    return
+  }
+
+  greenTrendLoading.value = true
+
+  try {
+    const { startDate, endDate } = getHistoricalDateRange(HISTORICAL_TREND_DAYS)
+    const weatherUrl = new URL(HISTORICAL_WEATHER_ENDPOINT)
+    weatherUrl.searchParams.set('suburb', suburbQuery)
+    weatherUrl.searchParams.set('state', state.toUpperCase())
+    weatherUrl.searchParams.set('start_date', startDate)
+    weatherUrl.searchParams.set('end_date', endDate)
+    weatherUrl.searchParams.set(
+      'hourly',
+      'temperature_2m,rain,vapour_pressure_deficit,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm',
+    )
+    weatherUrl.searchParams.set('timezone', 'auto')
+
+    const response = await fetch(weatherUrl)
+    if (!response.ok) {
+      throw new Error('Failed to fetch historical weather trend data.')
+    }
+
+    const payload = await response.json()
+    const data = payload.data || payload
+    writeCache(cacheKey, data)
+    greenTrendSeries.value = buildGreenTrendSeries(data)
+    greenTrendLoaded.value = true
+  } catch (error) {
+    greenTrendSeries.value = { labels: [], series: {}, units: {} }
+    greenTrendError.value = error instanceof Error ? error.message : 'Unexpected error.'
+  } finally {
+    greenTrendLoading.value = false
+  }
+}
+
 // Lookup LGA details for the current suburb + state.
 const loadLga = async () => {
   const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
@@ -674,6 +1032,35 @@ const trendChartData = computed(() => {
   }
 })
 
+const greenTrendChartData = computed(() => {
+  const series = greenTrendSeries.value.series || {}
+  const labels = (greenTrendSeries.value.labels || []).map(formatDateLabel)
+  const metric = greenTrendMetricOptions.find(
+    (item) => item.key === selectedGreenTrendMetric.value,
+  )
+  const label = metric ? metric.label : selectedGreenTrendMetric.value
+  const unit = greenTrendSeries.value.units?.[selectedGreenTrendMetric.value] || ''
+  const data = Array.isArray(series[selectedGreenTrendMetric.value])
+    ? series[selectedGreenTrendMetric.value]
+    : []
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: unit ? `${label} (${unit})` : label,
+        data,
+        fill: false,
+        tension: 0.35,
+        borderColor: '#0f766e',
+        backgroundColor: 'rgba(15, 118, 110, 0.2)',
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+  }
+})
+
 const trendChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -706,6 +1093,8 @@ const trendChartOptions = computed(() => ({
   },
 }))
 
+const greenTrendChartOptions = computed(() => trendChartOptions.value)
+
 const airQualitySummaryRows = computed(() => {
   const statsByMetric = {}
   const series = trendSeries.value.series || {}
@@ -727,6 +1116,8 @@ const airQualitySummaryRows = computed(() => {
 
 onMounted(loadAirQuality)
 onMounted(loadAirQualityTrend)
+onMounted(loadHistoricalWeather)
+onMounted(loadHistoricalWeatherTrend)
 onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
 watch(
@@ -735,6 +1126,9 @@ watch(
     loadAirQuality()
     trendLoaded.value = false
     loadAirQualityTrend()
+    loadHistoricalWeather()
+    greenTrendLoaded.value = false
+    loadHistoricalWeatherTrend()
     loadLga()
   },
 )
@@ -749,6 +1143,14 @@ watch(
   (value) => {
     if (value === 'trend' && !trendLoaded.value && !trendLoading.value) {
       loadAirQualityTrend()
+    }
+  },
+)
+watch(
+  () => activeGreenSubtab.value,
+  (value) => {
+    if (value === 'trend' && !greenTrendLoaded.value && !greenTrendLoading.value) {
+      loadHistoricalWeatherTrend()
     }
   },
 )
