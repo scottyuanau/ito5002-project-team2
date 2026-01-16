@@ -8,7 +8,13 @@
       <RouterView />
     </main>
 
-    <footer class="px-6 py-6 text-center text-sm text-slate-600">Footer area</footer>
+    <footer class="px-6 py-6 text-center text-sm text-slate-600">
+      <nav class="flex flex-wrap justify-center gap-6 uppercase tracking-[0.2em]">
+        <RouterLink to="/" class="transition hover:text-slate-900">Home</RouterLink>
+        <RouterLink to="/compare" class="transition hover:text-slate-900">Compare</RouterLink>
+        <RouterLink to="/contact" class="transition hover:text-slate-900">Contact</RouterLink>
+      </nav>
+    </footer>
   </div>
 </template>
 
