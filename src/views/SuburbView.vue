@@ -9,9 +9,7 @@
     <section class="rounded-2xl border border-slate-200 bg-white p-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="space-y-1">
-          <p class="text-xs uppercase tracking-[0.2em] text-slate-400">
-            Local government area
-          </p>
+          <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Local government area</p>
           <p class="text-lg font-semibold text-slate-900">
             {{ lgaName || 'Unavailable' }}
           </p>
@@ -40,13 +38,30 @@
       <TabPanels>
         <TabPanel value="air">
           <div class="space-y-4">
-            <p class="text-sm text-slate-500">Current air pollution levels.</p>
-            <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
-            <DataTable :value="airQualityRows" stripedRows class="w-full" :loading="loading">
-              <Column field="pollutant" header="Pollutant"></Column>
-              <Column field="value" header="Current"></Column>
-              <Column field="unit" header="Unit"></Column>
-            </DataTable>
+            <nav class="flex items-center gap-4 text-sm">
+              <button
+                type="button"
+                class="font-medium transition-colors cursor-pointer"
+                :class="
+                  activeAirSubtab === 'summary'
+                    ? 'text-slate-900 underline decoration-2 underline-offset-4'
+                    : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
+                "
+                :aria-current="activeAirSubtab === 'summary' ? 'page' : undefined"
+                @click="activeAirSubtab = 'summary'"
+              >
+                Summary
+              </button>
+            </nav>
+            <div v-if="activeAirSubtab === 'summary'" class="space-y-4">
+              <p class="text-sm text-slate-500">Current air pollution levels.</p>
+              <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
+              <DataTable :value="airQualityRows" stripedRows class="w-full" :loading="loading">
+                <Column field="pollutant" header="Pollutant"></Column>
+                <Column field="value" header="Current"></Column>
+                <Column field="unit" header="Unit"></Column>
+              </DataTable>
+            </div>
           </div>
         </TabPanel>
         <TabPanel value="green">
@@ -77,6 +92,7 @@ import { useAuthStore } from '../stores/auth'
 const route = useRoute()
 const authStore = useAuthStore()
 const activeTab = ref('air')
+const activeAirSubtab = ref('summary')
 const loading = ref(false)
 const errorMessage = ref('')
 const lgaName = ref('')
@@ -116,7 +132,7 @@ const canToggleSubscription = computed(
     authStore.isAuthenticated &&
     isDbReady.value &&
     Boolean(lgaName.value) &&
-    !isUpdatingSubscription.value
+    !isUpdatingSubscription.value,
 )
 
 const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
@@ -389,6 +405,6 @@ watch(
   () => [authStore.user?.uid, lgaName.value],
   () => {
     refreshSubscriptionStatus()
-  }
+  },
 )
 </script>
