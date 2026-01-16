@@ -38,15 +38,6 @@ const items = computed(() => [
       }
     },
   },
-  {
-    label: 'About',
-    icon: 'pi pi-info-circle',
-    command: () => {
-      if (route.path !== '/about') {
-        router.push('/about')
-      }
-    },
-  },
   ...(!authStore.isAuthenticated
     ? [
         {
