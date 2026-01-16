@@ -10,6 +10,7 @@
 const {setGlobalOptions} = require("firebase-functions");
 const lookupSuburbLga = require("./src/lookupSuburbLga");
 const lookupAirQuality = require("./src/lookupAirQuality");
+const lookupHistoricalWeather = require("./src/lookupHistoricalWeather");
 
 // For cost control, you can set the maximum number of containers that can be
 // running at the same time. This helps mitigate the impact of unexpected
@@ -25,3 +26,4 @@ setGlobalOptions({ maxInstances: 10 });
 
 exports.lookupSuburbLga = lookupSuburbLga;
 exports.lookupAirQuality = lookupAirQuality;
+exports.lookupHistoricalWeather = lookupHistoricalWeather;

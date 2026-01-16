@@ -1,0 +1,25 @@
+{
+  "function": "lookupHistoricalWeather",
+  "description": "Open-Meteo archive response payload returned by lookupHistoricalWeather.",
+  "fields": {
+    "source": "string",
+    "data": {
+      "latitude": "number",
+      "longitude": "number",
+      "generationtime_ms": "number",
+      "utc_offset_seconds": "number",
+      "timezone": "string",
+      "timezone_abbreviation": "string",
+      "elevation": "number",
+      "hourly_units": "object|null",
+      "hourly": "object|null",
+      "daily_units": "object|null",
+      "daily": "object|null"
+    }
+  },
+  "notes": [
+    "When multiple coordinates are requested, data can be an array of response objects.",
+    "Hourly and daily objects include keys based on requested variables.",
+    "Timezone is required when requesting daily variables."
+  ]
+}
