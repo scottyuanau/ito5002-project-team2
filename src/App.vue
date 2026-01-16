@@ -4,7 +4,7 @@
       <NavigationBar />
     </header>
 
-    <main class="flex flex-1 items-center justify-center px-6 pb-8 pt-16 text-center md:pt-24">
+    <main class="flex flex-1 justify-center pb-8 text-center">
       <RouterView />
     </main>
 
