@@ -108,6 +108,61 @@
           </tbody>
         </table>
       </div>
+
+      <div class="flex items-center justify-between pt-4">
+        <h2 class="text-base font-semibold text-slate-800">Green space comparison</h2>
+        <p v-if="greenLoading" class="text-sm text-slate-500">Loading latest metrics...</p>
+      </div>
+
+      <div v-if="greenComparisonErrors.length" class="space-y-1">
+        <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
+        <ul class="list-disc pl-5 text-sm text-red-600">
+          <li v-for="error in greenComparisonErrors" :key="error.key">{{ error.label }}</li>
+        </ul>
+      </div>
+
+      <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table class="min-w-full text-sm">
+          <thead class="border-b border-slate-200 bg-slate-50 text-left">
+            <tr v-if="greenLoading">
+              <th v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                <Skeleton height="1.1rem" width="80%" />
+              </th>
+            </tr>
+            <tr v-else>
+              <th class="px-4 py-3 font-semibold text-slate-600">Metric</th>
+              <th class="px-4 py-3 font-semibold text-slate-600">Unit</th>
+              <th
+                v-for="suburb in compareSuburbs"
+                :key="suburb.key"
+                class="px-4 py-3 font-semibold text-slate-700"
+              >
+                {{ suburb.label }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in greenLoading ? greenMetrics : greenComparisonRows"
+              :key="row.key || row.metric"
+              class="border-b border-slate-200 last:border-b-0"
+            >
+              <template v-if="greenLoading">
+                <td v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                  <Skeleton height="1.1rem" width="100%" />
+                </td>
+              </template>
+              <template v-else>
+                <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
+                <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
+                <td v-for="value in row.values" :key="value.key" class="px-4 py-3 text-slate-700">
+                  {{ value.value }}
+                </td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 </template>
@@ -124,13 +179,19 @@ const suburbInput = ref('')
 const selectedState = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
+const greenLoading = ref(false)
 const compareSuburbs = ref([])
 const comparisonResults = ref({})
+const greenComparisonResults = ref({})
 
 const MAX_COMPARE = 3
 const CACHE_TTL_MS = 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
+const GREEN_CACHE_PREFIX = 'historicalWeatherCompareCache:'
 const COMPARE_STORAGE_KEY = 'compare:suburbs'
+const HISTORICAL_WEATHER_ENDPOINT =
+  'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
+const HISTORICAL_DAYS = 30
 
 const pollutants = [
   { key: 'pm10', label: 'PM10' },
@@ -139,6 +200,13 @@ const pollutants = [
   { key: 'nitrogen_dioxide', label: 'NO2' },
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
+]
+const greenMetrics = [
+  { key: 'temperature_2m', label: 'Temperature (2 m)' },
+  { key: 'rain', label: 'Rain' },
+  { key: 'vapour_pressure_deficit', label: 'Vapour Pressure Deficit' },
+  { key: 'soil_temperature_0_to_7cm', label: 'Soil Temperature (0-7 cm)' },
+  { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)' },
 ]
 
 const canAdd = computed(() => suburbInput.value.trim().length > 0 && selectedState.value)
@@ -161,6 +229,7 @@ const saveCompareState = () => {
     const payload = {
       suburbs: compareSuburbs.value,
       results: comparisonResults.value,
+      greenResults: greenComparisonResults.value,
     }
     localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(payload))
   } catch {
@@ -182,9 +251,13 @@ const loadCompareState = () => {
     if (parsed?.results && typeof parsed.results === 'object') {
       comparisonResults.value = parsed.results
     }
+    if (parsed?.greenResults && typeof parsed.greenResults === 'object') {
+      greenComparisonResults.value = parsed.greenResults
+    }
   } catch {
     compareSuburbs.value = []
     comparisonResults.value = {}
+    greenComparisonResults.value = {}
   }
 }
 
@@ -261,6 +334,51 @@ const buildAirQualityMetrics = (payload) => {
   }, {})
 }
 
+const getLatestNumericValue = (values) => {
+  if (!Array.isArray(values)) {
+    return null
+  }
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = Number(values[index])
+    if (Number.isFinite(value)) {
+      return value
+    }
+  }
+  return null
+}
+
+const formatIsoDate = (date) => date.toISOString().slice(0, 10)
+
+const getHistoricalDateRange = (days) => {
+  const now = new Date()
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const startDate = new Date(todayUtc)
+  startDate.setUTCDate(todayUtc.getUTCDate() - (days - 1))
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(todayUtc),
+  }
+}
+
+const buildGreenMetrics = (payload) => {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+
+  return greenMetrics.reduce((acc, metric) => {
+    const values = Array.isArray(hourly[metric.key]) ? hourly[metric.key] : []
+    const latestValue = getLatestNumericValue(values)
+    acc[metric.key] = {
+      value: latestValue === null ? 'N/A' : Number(latestValue.toFixed(2)),
+      unit: hourlyUnits[metric.key] || '',
+    }
+    return acc
+  }, {})
+}
+
 // Fetch air quality data for a single suburb, using cache when possible.
 const fetchAirQuality = async (suburbName, state) => {
   const suburbQuery = suburbName.trim()
@@ -294,6 +412,37 @@ const fetchAirQuality = async (suburbName, state) => {
 
   const airPayload = await airResponse.json()
   const data = airPayload.data || airPayload
+  writeCache(cacheKey, data)
+  return data
+}
+
+const fetchHistoricalWeather = async (suburbName, state) => {
+  const suburbQuery = suburbName.trim()
+  const cacheKey = `${GREEN_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    return cachedData
+  }
+
+  const { startDate, endDate } = getHistoricalDateRange(HISTORICAL_DAYS)
+  const weatherUrl = new URL(HISTORICAL_WEATHER_ENDPOINT)
+  weatherUrl.searchParams.set('suburb', suburbQuery)
+  weatherUrl.searchParams.set('state', state.toUpperCase())
+  weatherUrl.searchParams.set('start_date', startDate)
+  weatherUrl.searchParams.set('end_date', endDate)
+  weatherUrl.searchParams.set(
+    'hourly',
+    'temperature_2m,rain,vapour_pressure_deficit,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm',
+  )
+  weatherUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(weatherUrl)
+  if (!response.ok) {
+    throw new Error('Failed to fetch historical weather data.')
+  }
+
+  const payload = await response.json()
+  const data = payload.data || payload
   writeCache(cacheKey, data)
   return data
 }
@@ -371,6 +520,35 @@ const loadComparison = async () => {
   loading.value = false
 }
 
+const loadGreenComparison = async () => {
+  if (compareSuburbs.value.length < 2) {
+    return
+  }
+
+  greenLoading.value = true
+  const results = { ...greenComparisonResults.value }
+
+  await Promise.all(
+    compareSuburbs.value.map(async (suburb) => {
+      try {
+        const payload = await fetchHistoricalWeather(suburb.suburb, suburb.state)
+        results[suburb.key] = {
+          label: suburb.label,
+          metrics: buildGreenMetrics(payload),
+        }
+      } catch (error) {
+        results[suburb.key] = {
+          label: suburb.label,
+          error: error instanceof Error ? error.message : 'Unexpected error.',
+        }
+      }
+    }),
+  )
+
+  greenComparisonResults.value = results
+  greenLoading.value = false
+}
+
 const comparisonRows = computed(() =>
   pollutants.map((metric) => {
     const values = compareSuburbs.value.map((suburb) => {
@@ -392,12 +570,42 @@ const comparisonRows = computed(() =>
   }),
 )
 
+const greenComparisonRows = computed(() =>
+  greenMetrics.map((metric) => {
+    const values = compareSuburbs.value.map((suburb) => {
+      const metrics = greenComparisonResults.value[suburb.key]?.metrics
+      const value = metrics?.[metric.key]?.value ?? '—'
+      return { key: suburb.key, value }
+    })
+
+    const unit =
+      compareSuburbs.value
+        .map((suburb) => greenComparisonResults.value[suburb.key]?.metrics?.[metric.key]?.unit)
+        .find((value) => value) || ''
+
+    return {
+      metric: metric.label,
+      unit,
+      values,
+    }
+  }),
+)
+
 const comparisonErrors = computed(() =>
   compareSuburbs.value
     .filter((suburb) => comparisonResults.value[suburb.key]?.error)
     .map((suburb) => ({
       key: suburb.key,
       label: `${suburb.label}: ${comparisonResults.value[suburb.key].error}`,
+    })),
+)
+
+const greenComparisonErrors = computed(() =>
+  compareSuburbs.value
+    .filter((suburb) => greenComparisonResults.value[suburb.key]?.error)
+    .map((suburb) => ({
+      key: suburb.key,
+      label: `${suburb.label}: ${greenComparisonResults.value[suburb.key].error}`,
     })),
 )
 
@@ -412,6 +620,7 @@ watch(
       return
     }
     loadComparison()
+    loadGreenComparison()
   },
   { deep: true },
 )
@@ -419,6 +628,13 @@ watch(
 // Persist compare results whenever metrics update.
 watch(
   () => comparisonResults.value,
+  () => {
+    saveCompareState()
+  },
+  { deep: true },
+)
+watch(
+  () => greenComparisonResults.value,
   () => {
     saveCompareState()
   },
@@ -438,6 +654,7 @@ onMounted(() => {
   loadCompareState()
   if (compareSuburbs.value.length >= 2) {
     loadComparison()
+    loadGreenComparison()
   }
 })
 </script>
