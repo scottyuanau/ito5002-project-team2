@@ -26,4 +26,31 @@ app.use(PrimeVue, {
 const authStore = useAuthStore(pinia)
 authStore.init()
 
+// Wait for Firebase auth to finish initializing before enforcing protected routes.
+const waitForAuthReady = () =>
+  new Promise((resolve) => {
+    if (authStore.ready) {
+      resolve()
+      return
+    }
+    const unsubscribe = authStore.$subscribe((_, state) => {
+      if (state.ready) {
+        unsubscribe()
+        resolve()
+      }
+    })
+  })
+
+router.beforeEach(async (to) => {
+  if (!to.meta?.requiresAuth) {
+    return true
+  }
+  // Ensure auth state is resolved before checking access.
+  await waitForAuthReady()
+  if (!authStore.isAuthenticated) {
+    return { name: 'login' }
+  }
+  return true
+})
+
 app.mount('#app')
