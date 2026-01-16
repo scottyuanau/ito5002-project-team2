@@ -1,5 +1,5 @@
 <template>
-  <section class="mx-auto flex w-full max-w-3xl flex-col items-center gap-6">
+  <section class="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 self-start">
     <div class="space-y-2 text-center">
       <h1 class="text-3xl font-semibold text-slate-900">Find a suburb</h1>
       <p class="text-sm text-slate-500">Search Australian suburbs by name and state.</p>
