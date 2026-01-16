@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   GoogleAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updatePassword,
   updateProfile,
 } from 'firebase/auth'
 import { auth, missingKeys } from '../firebase'
@@ -87,6 +90,21 @@ export const useAuthStore = defineStore('auth', {
       }
       await signOut(auth)
       this.user = null
+    },
+    // Re-authenticate with the current password before updating to a new password.
+    async updatePassword({ currentPassword, newPassword }) {
+      if (!auth || !auth.currentUser) {
+        throw new Error('Firebase auth is not configured.')
+      }
+      const user = auth.currentUser
+      if (!user.email) {
+        throw new Error('No email is associated with this account.')
+      }
+      const credential = EmailAuthProvider.credential(user.email, currentPassword)
+      await reauthenticateWithCredential(user, credential)
+      await updatePassword(user, newPassword)
+      this.user = auth.currentUser
+      return auth.currentUser
     },
   },
 })
