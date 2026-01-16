@@ -52,6 +52,19 @@
               >
                 Summary
               </button>
+              <button
+                type="button"
+                class="font-medium transition-colors cursor-pointer"
+                :class="
+                  activeAirSubtab === 'trend'
+                    ? 'text-slate-900 underline decoration-2 underline-offset-4'
+                    : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
+                "
+                :aria-current="activeAirSubtab === 'trend' ? 'page' : undefined"
+                @click="activeAirSubtab = 'trend'"
+              >
+                Trend
+              </button>
             </nav>
             <div v-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
@@ -61,6 +74,43 @@
                 <Column field="value" header="Current"></Column>
                 <Column field="unit" header="Unit"></Column>
               </DataTable>
+            </div>
+            <div v-else-if="activeAirSubtab === 'trend'" class="space-y-4">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-sm font-medium text-slate-900">Three-month trend</p>
+                  <p class="text-xs text-slate-500">
+                    Daily averages over the last three months.
+                  </p>
+                </div>
+                <Dropdown
+                  v-model="selectedTrendMetric"
+                  :options="trendMetricOptions"
+                  optionLabel="label"
+                  optionValue="key"
+                  class="w-full sm:w-52"
+                  placeholder="Select metric"
+                  aria-label="Select metric"
+                />
+              </div>
+              <p v-if="trendError" class="text-sm text-red-600">{{ trendError }}</p>
+              <p v-else-if="trendLoading" class="text-sm text-slate-500">
+                Loading trend data...
+              </p>
+              <p
+                v-else-if="!trendSeries.labels.length"
+                class="text-sm text-slate-500"
+              >
+                No trend data available for this suburb yet.
+              </p>
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <Chart
+                  type="line"
+                  :data="trendChartData"
+                  :options="trendChartOptions"
+                  class="h-80 w-full"
+                />
+              </div>
             </div>
           </div>
         </TabPanel>
@@ -86,6 +136,8 @@ import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
+import Dropdown from 'primevue/dropdown'
+import Chart from 'primevue/chart'
 import { db } from '../firebase'
 import { useAuthStore } from '../stores/auth'
 
@@ -95,11 +147,14 @@ const activeTab = ref('air')
 const activeAirSubtab = ref('summary')
 const loading = ref(false)
 const errorMessage = ref('')
+const trendLoading = ref(false)
+const trendError = ref('')
 const lgaName = ref('')
 const lgaLoading = ref(false)
 const lgaError = ref('')
 const isSubscribed = ref(false)
 const isUpdatingSubscription = ref(false)
+const trendLoaded = ref(false)
 const airQualityRows = ref([
   { pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
   { pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
@@ -108,6 +163,16 @@ const airQualityRows = ref([
   { pollutant: 'SO2', value: 'N/A', unit: 'ug/m3' },
   { pollutant: 'O3', value: 'N/A', unit: 'ug/m3' },
 ])
+const trendMetricOptions = [
+  { key: 'pm10', label: 'PM10' },
+  { key: 'pm2_5', label: 'PM2.5' },
+  { key: 'carbon_monoxide', label: 'CO' },
+  { key: 'nitrogen_dioxide', label: 'NO2' },
+  { key: 'sulphur_dioxide', label: 'SO2' },
+  { key: 'ozone', label: 'O3' },
+]
+const selectedTrendMetric = ref('pm2_5')
+const trendSeries = ref({ labels: [], series: {}, units: {} })
 
 const suburbName = computed(() => {
   const raw = typeof route.params.suburb === 'string' ? route.params.suburb : ''
@@ -138,9 +203,12 @@ const canToggleSubscription = computed(
 const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
 const CACHE_TTL_MS = 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
+const TREND_CACHE_PREFIX = 'airQualityTrendCache:'
 
 const getCacheKey = (suburbQuery, state) =>
   `${CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+const getTrendCacheKey = (suburbQuery, state) =>
+  `${TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 
 const readCache = (cacheKey) => {
   const raw = localStorage.getItem(cacheKey)
@@ -244,6 +312,98 @@ const buildAirQualityRows = (payload) => {
   })
 }
 
+// Format a YYYY-MM-DD string into a compact label.
+const formatDateLabel = (dateValue) => {
+  if (typeof dateValue !== 'string') {
+    return ''
+  }
+  const [year, month, day] = dateValue.split('-')
+  if (!year || !month || !day) {
+    return dateValue
+  }
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthIndex = Number.parseInt(month, 10) - 1
+  const monthLabel = monthLabels[monthIndex] || month
+  return `${day} ${monthLabel}`
+}
+
+// Build daily averages from hourly air quality data.
+const buildTrendSeries = (payload) => {
+  const fallback = { labels: [], series: {}, units: {} }
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  if (timeList.length === 0) {
+    return fallback
+  }
+
+  const labels = []
+  const labelIndex = new Map()
+  const sums = {}
+  const counts = {}
+  const units = {}
+
+  trendMetricOptions.forEach(({ key }) => {
+    sums[key] = []
+    counts[key] = []
+    units[key] = hourlyUnits[key] || 'ug/m3'
+  })
+
+  timeList.forEach((timeValue, index) => {
+    if (typeof timeValue !== 'string') {
+      return
+    }
+    const day = timeValue.split('T')[0]
+    if (!day) {
+      return
+    }
+    let dayIndex = labelIndex.get(day)
+    if (dayIndex === undefined) {
+      dayIndex = labels.length
+      labelIndex.set(day, dayIndex)
+      labels.push(day)
+      trendMetricOptions.forEach(({ key }) => {
+        sums[key][dayIndex] = 0
+        counts[key][dayIndex] = 0
+      })
+    }
+
+    trendMetricOptions.forEach(({ key }) => {
+      const series = hourly[key]
+      if (!Array.isArray(series)) {
+        return
+      }
+      const value = series[index]
+      if (value === null || value === undefined) {
+        return
+      }
+      const numericValue = Number(value)
+      if (!Number.isFinite(numericValue)) {
+        return
+      }
+      sums[key][dayIndex] += numericValue
+      counts[key][dayIndex] += 1
+    })
+  })
+
+  const series = {}
+  trendMetricOptions.forEach(({ key }) => {
+    series[key] = sums[key].map((total, idx) => {
+      const count = counts[key][idx]
+      if (!count) {
+        return null
+      }
+      return Number((total / count).toFixed(2))
+    })
+  })
+
+  return { labels, series, units }
+}
+
 const loadAirQuality = async () => {
   const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
   const state = typeof route.query.state === 'string' ? route.query.state : ''
@@ -298,6 +458,64 @@ const loadAirQuality = async () => {
     errorMessage.value = error instanceof Error ? error.message : 'Unexpected error.'
   } finally {
     loading.value = false
+  }
+}
+
+// Fetch and cache the three-month air quality trend.
+const loadAirQualityTrend = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+  const airQualityUrl = getAirQualityUrl()
+
+  trendError.value = ''
+
+  if (!suburbQuery || !state) {
+    trendError.value = 'Missing suburb or state. Please search again.'
+    return
+  }
+
+  if (!airQualityUrl) {
+    trendError.value = 'Missing Firebase Functions base URL configuration.'
+    return
+  }
+
+  const cacheKey = getTrendCacheKey(suburbQuery, state)
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    trendSeries.value = buildTrendSeries(cachedData)
+    trendLoaded.value = true
+    return
+  }
+
+  trendLoading.value = true
+
+  try {
+    const airUrl = new URL(airQualityUrl)
+    airUrl.searchParams.set('suburb', suburbQuery)
+    airUrl.searchParams.set('state', state.toUpperCase())
+    airUrl.searchParams.set(
+      'hourly',
+      'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
+    )
+    airUrl.searchParams.set('past_days', '92')
+    airUrl.searchParams.set('timezone', 'auto')
+
+    const airResponse = await fetch(airUrl)
+    if (!airResponse.ok) {
+      throw new Error('Failed to fetch air quality trend data.')
+    }
+
+    const airPayload = await airResponse.json()
+    const data = airPayload.data || airPayload
+    writeCache(cacheKey, data)
+    trendSeries.value = buildTrendSeries(data)
+    trendLoaded.value = true
+  } catch (error) {
+    trendSeries.value = { labels: [], series: {}, units: {} }
+    trendError.value = error instanceof Error ? error.message : 'Unexpected error.'
+  } finally {
+    trendLoading.value = false
   }
 }
 
@@ -391,6 +609,65 @@ const handleSubscriptionToggle = async () => {
   }
 }
 
+const trendChartData = computed(() => {
+  const series = trendSeries.value.series || {}
+  const labels = (trendSeries.value.labels || []).map(formatDateLabel)
+  const metric = trendMetricOptions.find((item) => item.key === selectedTrendMetric.value)
+  const label = metric ? metric.label : selectedTrendMetric.value
+  const unit = trendSeries.value.units?.[selectedTrendMetric.value] || 'ug/m3'
+  const data = Array.isArray(series[selectedTrendMetric.value])
+    ? series[selectedTrendMetric.value]
+    : []
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: `${label} (${unit})`,
+        data,
+        fill: false,
+        tension: 0.35,
+        borderColor: '#0f766e',
+        backgroundColor: 'rgba(15, 118, 110, 0.2)',
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+  }
+})
+
+const trendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      labels: {
+        color: '#334155',
+      },
+    },
+  },
+  scales: {
+    x: {
+      ticks: {
+        color: '#64748b',
+        maxTicksLimit: 10,
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+    y: {
+      ticks: {
+        color: '#64748b',
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+  },
+}))
+
 onMounted(loadAirQuality)
 onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
@@ -398,6 +675,10 @@ watch(
   () => [route.params.suburb, route.query.state],
   () => {
     loadAirQuality()
+    trendLoaded.value = false
+    if (activeAirSubtab.value === 'trend') {
+      loadAirQualityTrend()
+    }
     loadLga()
   },
 )
@@ -405,6 +686,14 @@ watch(
   () => [authStore.user?.uid, lgaName.value],
   () => {
     refreshSubscriptionStatus()
+  },
+)
+watch(
+  () => activeAirSubtab.value,
+  (value) => {
+    if (value === 'trend' && !trendLoaded.value && !trendLoading.value) {
+      loadAirQualityTrend()
+    }
   },
 )
 </script>
