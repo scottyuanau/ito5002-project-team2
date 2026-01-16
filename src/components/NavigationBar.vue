@@ -21,6 +21,15 @@ const items = computed(() => [
     },
   },
   {
+    label: 'Compare',
+    icon: 'pi pi-chart-bar',
+    command: () => {
+      if (route.path !== '/compare') {
+        router.push('/compare')
+      }
+    },
+  },
+  {
     label: 'About',
     icon: 'pi pi-info-circle',
     command: () => {
