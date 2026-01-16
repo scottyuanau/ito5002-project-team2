@@ -69,10 +69,19 @@
             <div v-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
               <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
-              <DataTable :value="airQualityRows" stripedRows class="w-full" :loading="loading">
+              <DataTable
+                :value="airQualitySummaryRows"
+                stripedRows
+                class="w-full"
+                :loading="loading || trendLoading"
+              >
                 <Column field="pollutant" header="Pollutant"></Column>
                 <Column field="value" header="Current"></Column>
                 <Column field="unit" header="Unit"></Column>
+                <Column field="median" header="Median"></Column>
+                <Column field="average" header="Average"></Column>
+                <Column field="minimum" header="Minimum"></Column>
+                <Column field="maximum" header="Maximum"></Column>
               </DataTable>
             </div>
             <div v-else-if="activeAirSubtab === 'trend'" class="space-y-4">
@@ -156,12 +165,12 @@ const isSubscribed = ref(false)
 const isUpdatingSubscription = ref(false)
 const trendLoaded = ref(false)
 const airQualityRows = ref([
-  { pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'CO', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'NO2', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'SO2', value: 'N/A', unit: 'ug/m3' },
-  { pollutant: 'O3', value: 'N/A', unit: 'ug/m3' },
+  { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
+  { key: 'pm2_5', pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
+  { key: 'carbon_monoxide', pollutant: 'CO', value: 'N/A', unit: 'ug/m3' },
+  { key: 'nitrogen_dioxide', pollutant: 'NO2', value: 'N/A', unit: 'ug/m3' },
+  { key: 'sulphur_dioxide', pollutant: 'SO2', value: 'N/A', unit: 'ug/m3' },
+  { key: 'ozone', pollutant: 'O3', value: 'N/A', unit: 'ug/m3' },
 ])
 const trendMetricOptions = [
   { key: 'pm10', label: 'PM10' },
@@ -305,11 +314,40 @@ const buildAirQualityRows = (payload) => {
     const value = getValue(key)
     const unit = getUnit(key) || 'ug/m3'
     return {
+      key,
       pollutant: label,
       value: value === null || value === undefined ? 'N/A' : value,
       unit,
     }
   })
+}
+
+const formatStatValue = (value) => {
+  if (!Number.isFinite(value)) {
+    return 'N/A'
+  }
+  return Number(value.toFixed(2))
+}
+
+const computeSeriesStats = (values) => {
+  if (!Array.isArray(values) || values.length === 0) {
+    return null
+  }
+  const cleaned = values.filter((value) => Number.isFinite(value))
+  if (cleaned.length === 0) {
+    return null
+  }
+  const sorted = [...cleaned].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  const median =
+    sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+  const sum = cleaned.reduce((total, value) => total + value, 0)
+  return {
+    median,
+    average: sum / cleaned.length,
+    minimum: sorted[0],
+    maximum: sorted[sorted.length - 1],
+  }
 }
 
 // Format a YYYY-MM-DD string into a compact label.
@@ -668,7 +706,27 @@ const trendChartOptions = computed(() => ({
   },
 }))
 
+const airQualitySummaryRows = computed(() => {
+  const statsByMetric = {}
+  const series = trendSeries.value.series || {}
+  trendMetricOptions.forEach(({ key }) => {
+    statsByMetric[key] = computeSeriesStats(series[key])
+  })
+
+  return airQualityRows.value.map((row) => {
+    const stats = statsByMetric[row.key]
+    return {
+      ...row,
+      median: stats ? formatStatValue(stats.median) : 'N/A',
+      average: stats ? formatStatValue(stats.average) : 'N/A',
+      minimum: stats ? formatStatValue(stats.minimum) : 'N/A',
+      maximum: stats ? formatStatValue(stats.maximum) : 'N/A',
+    }
+  })
+})
+
 onMounted(loadAirQuality)
+onMounted(loadAirQualityTrend)
 onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
 watch(
@@ -676,9 +734,7 @@ watch(
   () => {
     loadAirQuality()
     trendLoaded.value = false
-    if (activeAirSubtab.value === 'trend') {
-      loadAirQualityTrend()
-    }
+    loadAirQualityTrend()
     loadLga()
   },
 )
