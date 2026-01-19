@@ -57,7 +57,7 @@
       >
         <template #item="{ data }">
           <div
-            class="mx-3 flex h-full cursor-pointer flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+            class="mx-3 flex h-full cursor-pointer flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             role="button"
             tabindex="0"
             @click="navigateToSuburb(data)"
