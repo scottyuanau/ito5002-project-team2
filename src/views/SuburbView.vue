@@ -69,6 +69,34 @@
             <div v-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
               <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-slate-900">Air quality heatmap</p>
+                    <p class="text-xs text-slate-500">
+                      Current pollutant levels around the suburb.
+                    </p>
+                  </div>
+                  <Dropdown
+                    v-model="selectedHeatmapMetric"
+                    :options="heatmapMetricOptions"
+                    optionLabel="label"
+                    optionValue="key"
+                    class="w-full sm:w-48"
+                    placeholder="Select pollutant"
+                    aria-label="Select pollutant"
+                  />
+                </div>
+                <p v-if="heatmapError" class="mt-2 text-sm text-red-600">{{ heatmapError }}</p>
+                <p v-else-if="heatmapLoading" class="mt-2 text-sm text-slate-500">
+                  Loading heatmap data...
+                </p>
+                <div
+                  class="mt-3 h-72 w-full overflow-hidden rounded-xl border border-slate-100 bg-slate-50"
+                >
+                  <div ref="heatmapContainer" class="h-full w-full"></div>
+                </div>
+              </div>
               <DataTable
                 :value="airQualitySummaryRows"
                 stripedRows
@@ -213,7 +241,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import Button from 'primevue/button'
@@ -226,6 +254,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Dropdown from 'primevue/dropdown'
 import Chart from 'primevue/chart'
+import mapboxgl from 'mapbox-gl'
 import { db } from '../firebase'
 import { useAuthStore } from '../stores/auth'
 
@@ -245,10 +274,18 @@ const greenTrendError = ref('')
 const lgaName = ref('')
 const lgaLoading = ref(false)
 const lgaError = ref('')
+const lgaCoordinates = ref(null)
 const isSubscribed = ref(false)
 const isUpdatingSubscription = ref(false)
 const trendLoaded = ref(false)
 const greenTrendLoaded = ref(false)
+const heatmapContainer = ref(null)
+const heatmapMap = ref(null)
+const heatmapLoading = ref(false)
+const heatmapError = ref('')
+const heatmapLoaded = ref(false)
+const heatmapPoints = ref([])
+const selectedHeatmapMetric = ref('pm2_5')
 const airQualityRows = ref([
   { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
   { key: 'pm2_5', pollutant: 'PM2.5', value: 'N/A', unit: 'ug/m3' },
@@ -265,6 +302,7 @@ const trendMetricOptions = [
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
 ]
+const heatmapMetricOptions = trendMetricOptions
 const selectedTrendMetric = ref('pm2_5')
 const trendSeries = ref({ labels: [], series: {}, units: {} })
 const greenSummaryRows = ref([])
@@ -298,10 +336,12 @@ const canToggleSubscription = computed(
 
 const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
 const CACHE_TTL_MS = 60 * 60 * 1000
+const HEATMAP_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
 const TREND_CACHE_PREFIX = 'airQualityTrendCache:'
 const HISTORICAL_WEATHER_CACHE_PREFIX = 'historicalWeatherCache:'
 const HISTORICAL_WEATHER_TREND_CACHE_PREFIX = 'historicalWeatherTrendCache:'
+const HEATMAP_CACHE_PREFIX = 'airHeatmapCache:v2:'
 const HISTORICAL_WEATHER_ENDPOINT =
   'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
 const HISTORICAL_DAYS = 30
@@ -315,6 +355,8 @@ const getHistoricalWeatherCacheKey = (suburbQuery, state) =>
   `${HISTORICAL_WEATHER_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 const getHistoricalWeatherTrendCacheKey = (suburbQuery, state) =>
   `${HISTORICAL_WEATHER_TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+const getHeatmapCacheKey = (suburbQuery, state) =>
+  `${HEATMAP_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 
 const readCache = (cacheKey) => {
   const raw = localStorage.getItem(cacheKey)
@@ -340,6 +382,31 @@ const readCache = (cacheKey) => {
   }
 }
 
+// Read cached entries with a custom TTL for heatmap data.
+const readCacheWithTtl = (cacheKey, ttlMs) => {
+  const raw = localStorage.getItem(cacheKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (typeof parsed.fetchedAt !== 'number' || !parsed.data) {
+      return null
+    }
+    if (Date.now() - parsed.fetchedAt > ttlMs) {
+      localStorage.removeItem(cacheKey)
+      return null
+    }
+    return parsed.data
+  } catch {
+    localStorage.removeItem(cacheKey)
+    return null
+  }
+}
+
 const writeCache = (cacheKey, data) => {
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
   localStorage.setItem(cacheKey, payload)
@@ -347,6 +414,7 @@ const writeCache = (cacheKey, data) => {
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 const getLgaLookupUrl = () => import.meta.env.VITE_FIREBASE_LGA_LOOKUP_URL || ''
+const getMapboxToken = () => import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || ''
 
 // Normalize an LGA name for deterministic subscription document IDs.
 const toLgaSlug = (value) =>
@@ -367,6 +435,23 @@ const getLgaDisplayName = (results) => {
   }
   const primary = raw.split(',')[0]?.trim()
   return primary || raw
+}
+
+// Extract suburb coordinates for map rendering from LGA lookup results.
+const getLgaCoordinates = (results) => {
+  if (!Array.isArray(results) || results.length === 0) {
+    return null
+  }
+  const first = results[0]
+  const lat = Number.parseFloat(first?.lat)
+  const lon = Number.parseFloat(first?.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null
+  }
+  const boundingBox = Array.isArray(first?.boundingBox)
+    ? first.boundingBox.map((value) => Number.parseFloat(value))
+    : []
+  return { lat, lon, boundingBox }
 }
 
 const buildAirQualityRows = (payload) => {
@@ -694,6 +779,355 @@ const buildTrendSeries = (payload) => {
   return { labels, series, units }
 }
 
+const normalizeSeedValue = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+const hashSeed = (value) => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+const seededRandom = (seed) => {
+  let value = seed >>> 0
+  return () => {
+    value |= 0
+    value = (value + 0x6d2b79f5) | 0
+    let t = Math.imul(value ^ (value >>> 15), 1 | value)
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const buildHeatmapPoints = (center, seedKey) => {
+  if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lon)) {
+    return []
+  }
+  const random = seededRandom(hashSeed(normalizeSeedValue(seedKey)))
+  const radiusKm = 100
+
+  const points = [
+    {
+      lat: center.lat,
+      lon: center.lon,
+    },
+  ]
+
+  for (let index = 0; index < 9; index += 1) {
+    const angle = random() * Math.PI * 2
+    const distanceKm = Math.sqrt(random()) * radiusKm
+    const latOffset = (distanceKm * Math.cos(angle)) / 111
+    const lonOffset =
+      (distanceKm * Math.sin(angle)) / (111 * Math.cos((center.lat * Math.PI) / 180))
+    points.push({
+      lat: center.lat + latOffset,
+      lon: center.lon + lonOffset,
+    })
+  }
+
+  return points
+}
+
+// Pull current pollutant values from an air quality payload.
+const extractCurrentMetrics = (payload) => {
+  const data = payload?.data || payload
+  const current = data?.current || null
+  const hourly = data?.hourly || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  const lastIndex = timeList.length > 0 ? timeList.length - 1 : -1
+
+  const metricKeys = trendMetricOptions.map(({ key }) => key)
+  const metrics = {}
+
+  metricKeys.forEach((key) => {
+    let value = null
+    if (current && Object.prototype.hasOwnProperty.call(current, key)) {
+      value = current[key]
+    } else if (lastIndex >= 0 && Array.isArray(hourly[key])) {
+      value = hourly[key][lastIndex]
+    }
+    const numericValue = Number(value)
+    metrics[key] = Number.isFinite(numericValue) ? numericValue : null
+  })
+
+  return metrics
+}
+
+const buildHeatmapGeojson = (metricKey) => {
+  const features = heatmapPoints.value
+    .map((point) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [point.lon, point.lat],
+      },
+      properties: {
+        value: point.metrics?.[metricKey] ?? null,
+      },
+    }))
+    .filter((feature) => Number.isFinite(feature.properties.value))
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  }
+}
+
+const getHeatmapMaxValue = (metricKey) => {
+  const values = heatmapPoints.value
+    .map((point) => point.metrics?.[metricKey])
+    .filter((value) => Number.isFinite(value))
+  return values.length ? Math.max(...values) : 1
+}
+
+const buildHeatmapWeightExpression = (maxValue) => [
+  'interpolate',
+  ['linear'],
+  ['get', 'value'],
+  0,
+  0,
+  maxValue || 1,
+  1,
+]
+
+const updateHeatmapSource = () => {
+  const map = heatmapMap.value
+  if (!map || !map.isStyleLoaded()) {
+    return
+  }
+  const source = map.getSource('air-heatmap')
+  if (source) {
+    source.setData(buildHeatmapGeojson(selectedHeatmapMetric.value))
+  }
+}
+
+const updateHeatmapPaint = () => {
+  const map = heatmapMap.value
+  if (!map || !map.isStyleLoaded()) {
+    return
+  }
+  const maxValue = getHeatmapMaxValue(selectedHeatmapMetric.value)
+  map.setPaintProperty(
+    'air-heatmap-layer',
+    'heatmap-weight',
+    buildHeatmapWeightExpression(maxValue),
+  )
+  map.setPaintProperty('air-heatmap-layer', 'heatmap-intensity', 1.25)
+  map.setPaintProperty(
+    'air-heatmap-layer',
+    'heatmap-radius',
+    ['interpolate', ['linear'], ['zoom'], 9, 30, 12, 55],
+  )
+}
+
+const applyHeatmapUpdates = () => {
+  const map = heatmapMap.value
+  if (!map) {
+    return
+  }
+  if (map.isStyleLoaded()) {
+    updateHeatmapSource()
+    updateHeatmapPaint()
+    return
+  }
+  map.once('load', () => {
+    updateHeatmapSource()
+    updateHeatmapPaint()
+  })
+}
+
+const fitHeatmapBounds = () => {
+  const map = heatmapMap.value
+  if (!map || !map.isStyleLoaded()) {
+    return
+  }
+  let hasPoint = false
+  const bounds = new mapboxgl.LngLatBounds()
+  heatmapPoints.value.forEach((point) => {
+    if (!Number.isFinite(point?.lat) || !Number.isFinite(point?.lon)) {
+      return
+    }
+    bounds.extend([point.lon, point.lat])
+    hasPoint = true
+  })
+  if (hasPoint) {
+    map.fitBounds(bounds, { padding: 40, duration: 0 })
+    return
+  }
+  if (lgaCoordinates.value) {
+    map.flyTo({ center: [lgaCoordinates.value.lon, lgaCoordinates.value.lat], zoom: 11 })
+  }
+}
+
+const destroyHeatmapMap = () => {
+  if (heatmapMap.value) {
+    heatmapMap.value.remove()
+    heatmapMap.value = null
+  }
+}
+
+const ensureHeatmapMap = async () => {
+  const token = getMapboxToken()
+  if (!token) {
+    heatmapError.value = 'Missing Mapbox access token configuration.'
+    return
+  }
+  mapboxgl.accessToken = token
+  await nextTick()
+  if (heatmapMap.value || !heatmapContainer.value) {
+    return
+  }
+  const center = lgaCoordinates.value
+  heatmapMap.value = new mapboxgl.Map({
+    container: heatmapContainer.value,
+    style: 'mapbox://styles/mapbox/light-v11',
+    center: center ? [center.lon, center.lat] : [0, 0],
+    zoom: 11,
+  })
+  heatmapMap.value.addControl(
+    new mapboxgl.NavigationControl({ showCompass: false }),
+  )
+  heatmapMap.value.on('load', () => {
+    if (!heatmapMap.value) {
+      return
+    }
+    heatmapMap.value.addSource('air-heatmap', {
+      type: 'geojson',
+      data: buildHeatmapGeojson(selectedHeatmapMetric.value),
+    })
+    heatmapMap.value.addLayer({
+      id: 'air-heatmap-layer',
+      type: 'heatmap',
+      source: 'air-heatmap',
+      paint: {
+        'heatmap-weight': buildHeatmapWeightExpression(
+          getHeatmapMaxValue(selectedHeatmapMetric.value),
+        ),
+        'heatmap-intensity': 1.25,
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 9, 30, 12, 55],
+        'heatmap-opacity': 0.95,
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0,
+          'rgba(148, 163, 184, 0)',
+          0.2,
+          '#a7f3d0',
+          0.4,
+          '#34d399',
+          0.6,
+          '#fbbf24',
+          0.8,
+          '#f97316',
+          1,
+          '#ef4444',
+        ],
+      },
+    })
+    fitHeatmapBounds()
+  })
+}
+
+const loadHeatmapData = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+  const airQualityUrl = getAirQualityUrl()
+
+  heatmapError.value = ''
+
+  if (!suburbQuery || !state) {
+    heatmapError.value = 'Missing suburb or state. Please search again.'
+    return
+  }
+
+  if (!airQualityUrl) {
+    heatmapError.value = 'Missing Firebase Functions base URL configuration.'
+    return
+  }
+
+  if (!lgaCoordinates.value) {
+    heatmapError.value = 'No coordinate data available for this suburb.'
+    return
+  }
+
+  const cacheKey = getHeatmapCacheKey(suburbQuery, state)
+  const cachedData = readCacheWithTtl(cacheKey, HEATMAP_CACHE_TTL_MS)
+  if (cachedData && Array.isArray(cachedData.points)) {
+    heatmapPoints.value = cachedData.points
+    heatmapLoaded.value = true
+    applyHeatmapUpdates()
+    fitHeatmapBounds()
+    return
+  }
+
+  heatmapLoading.value = true
+
+  try {
+    const seedKey = `${suburbQuery}|${state.toUpperCase()}`
+    const points = buildHeatmapPoints(lgaCoordinates.value, seedKey)
+    const responses = await Promise.all(
+      points.map(async (point) => {
+        const airUrl = new URL(airQualityUrl)
+        airUrl.searchParams.set('latitude', point.lat.toFixed(5))
+        airUrl.searchParams.set('longitude', point.lon.toFixed(5))
+        airUrl.searchParams.set(
+          'current',
+          'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
+        )
+        const response = await fetch(airUrl)
+        if (!response.ok) {
+          throw new Error('Failed to fetch heatmap air quality data.')
+        }
+        const payload = await response.json()
+        return {
+          ...point,
+          metrics: extractCurrentMetrics(payload),
+        }
+      }),
+    )
+    heatmapPoints.value = responses
+    writeCache(cacheKey, { points: responses })
+    heatmapLoaded.value = true
+    applyHeatmapUpdates()
+    fitHeatmapBounds()
+  } catch (error) {
+    heatmapError.value = error instanceof Error ? error.message : 'Unexpected error.'
+  } finally {
+    heatmapLoading.value = false
+  }
+}
+
+const maybeLoadHeatmap = async () => {
+  if (activeAirSubtab.value !== 'summary') {
+    return
+  }
+  if (!lgaCoordinates.value) {
+    return
+  }
+  if (!getMapboxToken()) {
+    return
+  }
+  if (!heatmapLoaded.value && !heatmapLoading.value) {
+    await loadHeatmapData()
+  }
+  await ensureHeatmapMap()
+}
+
+const resetHeatmapState = () => {
+  heatmapLoaded.value = false
+  heatmapPoints.value = []
+  heatmapError.value = ''
+  applyHeatmapUpdates()
+}
+
 const loadAirQuality = async () => {
   const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
   const state = typeof route.query.state === 'string' ? route.query.state : ''
@@ -924,6 +1358,7 @@ const loadLga = async () => {
 
   lgaError.value = ''
   lgaName.value = ''
+  lgaCoordinates.value = null
 
   if (!suburbQuery || !state) {
     lgaError.value = 'Missing suburb or state. Please search again.'
@@ -945,7 +1380,9 @@ const loadLga = async () => {
       throw new Error('Failed to load LGA data.')
     }
     const payload = await response.json()
-    lgaName.value = getLgaDisplayName(payload.data || payload)
+    const results = payload.data || payload
+    lgaName.value = getLgaDisplayName(results)
+    lgaCoordinates.value = getLgaCoordinates(results)
     if (!lgaName.value) {
       lgaError.value = 'No LGA data found for this suburb.'
     }
@@ -1120,6 +1557,8 @@ onMounted(loadHistoricalWeather)
 onMounted(loadHistoricalWeatherTrend)
 onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
+onMounted(maybeLoadHeatmap)
+onBeforeUnmount(destroyHeatmapMap)
 watch(
   () => [route.params.suburb, route.query.state],
   () => {
@@ -1130,6 +1569,8 @@ watch(
     greenTrendLoaded.value = false
     loadHistoricalWeatherTrend()
     loadLga()
+    resetHeatmapState()
+    maybeLoadHeatmap()
   },
 )
 watch(
@@ -1144,6 +1585,11 @@ watch(
     if (value === 'trend' && !trendLoaded.value && !trendLoading.value) {
       loadAirQualityTrend()
     }
+    if (value === 'summary') {
+      maybeLoadHeatmap()
+      return
+    }
+    destroyHeatmapMap()
   },
 )
 watch(
@@ -1152,6 +1598,24 @@ watch(
     if (value === 'trend' && !greenTrendLoaded.value && !greenTrendLoading.value) {
       loadHistoricalWeatherTrend()
     }
+  },
+)
+watch(
+  () => lgaCoordinates.value,
+  (coords) => {
+    if (!coords || activeAirSubtab.value !== 'summary') {
+      return
+    }
+    if (heatmapMap.value) {
+      heatmapMap.value.flyTo({ center: [coords.lon, coords.lat], zoom: 11 })
+    }
+    maybeLoadHeatmap()
+  },
+)
+watch(
+  () => selectedHeatmapMetric.value,
+  () => {
+    applyHeatmapUpdates()
   },
 )
 </script>
