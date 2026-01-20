@@ -43,6 +43,19 @@
                 type="button"
                 class="font-medium transition-colors cursor-pointer"
                 :class="
+                  activeAirSubtab === 'recommendations'
+                    ? 'text-slate-900 underline decoration-2 underline-offset-4'
+                    : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
+                "
+                :aria-current="activeAirSubtab === 'recommendations' ? 'page' : undefined"
+                @click="activeAirSubtab = 'recommendations'"
+              >
+                Recommendations
+              </button>
+              <button
+                type="button"
+                class="font-medium transition-colors cursor-pointer"
+                :class="
                   activeAirSubtab === 'summary'
                     ? 'text-slate-900 underline decoration-2 underline-offset-4'
                     : 'text-slate-500 hover:text-slate-900 hover:underline hover:decoration-2 hover:underline-offset-4'
@@ -66,7 +79,57 @@
                 Trend
               </button>
             </nav>
-            <div v-if="activeAirSubtab === 'summary'" class="space-y-4">
+            <div v-if="activeAirSubtab === 'recommendations'" class="space-y-4">
+              <p class="text-sm text-slate-500">
+                Recommended actions based on PM2.5 readings for the last three months.
+              </p>
+              <p v-if="trendError" class="text-sm text-red-600">{{ trendError }}</p>
+              <p v-else-if="trendLoading" class="text-sm text-slate-500">
+                Loading air quality trend data...
+              </p>
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-slate-900">PM2.5 gauge</p>
+                    <p class="text-xs text-slate-500">
+                      Three-month range: {{ pm25RangeLabel }}
+                    </p>
+                  </div>
+                  <p class="text-xs text-slate-500">Current: {{ pm25CurrentLabel }}</p>
+                </div>
+                <div class="mt-3 h-64 w-full">
+                  <div ref="pm25GaugeContainer" class="h-full w-full"></div>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                <p class="text-sm font-medium text-slate-900">Today in {{ suburbName }}</p>
+                <ul class="mt-3 space-y-2 text-sm text-slate-600">
+                  <li class="flex items-start gap-2">
+                    <span>{{ pm25Tier.emoji }}</span>
+                    <span>PM2.5 is {{ pm25Tier.label }} right now</span>
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span>📍</span>
+                    <span>{{ pm25Tier.summary }}</span>
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span>✅</span>
+                    <span>{{ pm25Tier.guidance }}</span>
+                  </li>
+                </ul>
+                <ul class="mt-4 space-y-2 text-sm text-slate-600">
+                  <li
+                    v-for="(recommendation, index) in pm25Recommendations"
+                    :key="`${pm25Tier.label}-${index}`"
+                    class="flex items-start gap-2"
+                  >
+                    <span>{{ recommendation.emoji }}</span>
+                    <span>{{ recommendation.text }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div v-else-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
               <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
@@ -254,9 +317,15 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Dropdown from 'primevue/dropdown'
 import Chart from 'primevue/chart'
+import Highcharts from 'highcharts'
+import HighchartsMore from 'highcharts/highcharts-more'
+import SolidGauge from 'highcharts/modules/solid-gauge'
 import mapboxgl from 'mapbox-gl'
 import { db } from '../firebase'
 import { useAuthStore } from '../stores/auth'
+
+HighchartsMore(Highcharts)
+SolidGauge(Highcharts)
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -285,6 +354,8 @@ const heatmapLoading = ref(false)
 const heatmapError = ref('')
 const heatmapLoaded = ref(false)
 const heatmapPoints = ref([])
+const pm25GaugeContainer = ref(null)
+const pm25GaugeChart = ref(null)
 const selectedHeatmapMetric = ref('pm2_5')
 const airQualityRows = ref([
   { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
@@ -545,6 +616,283 @@ const computeSeriesStats = (values) => {
     average: sum / cleaned.length,
     minimum: sorted[0],
     maximum: sorted[sorted.length - 1],
+  }
+}
+
+const pm25CurrentValue = computed(() => {
+  const row = airQualityRows.value.find((item) => item.key === 'pm2_5')
+  const value = Number(row?.value)
+  return Number.isFinite(value) ? value : null
+})
+
+const pm25TrendStats = computed(() =>
+  computeSeriesStats(trendSeries.value.series?.pm2_5 || []),
+)
+
+const pm25Unit = computed(() => trendSeries.value.units?.pm2_5 || 'ug/m3')
+
+const pm25RangeLabel = computed(() => {
+  const stats = pm25TrendStats.value
+  if (!stats) {
+    return 'N/A'
+  }
+  return `${formatStatValue(stats.minimum)}–${formatStatValue(stats.maximum)} ${pm25Unit.value}`
+})
+
+const pm25CurrentLabel = computed(() => {
+  const value = pm25CurrentValue.value
+  return Number.isFinite(value) ? `${formatStatValue(value)} ${pm25Unit.value}` : 'N/A'
+})
+
+const getPm25Tier = (value) => {
+  if (!Number.isFinite(value)) {
+    return {
+      label: 'Unavailable',
+      summary: 'No recent PM2.5 data',
+      guidance: 'Check back later for updated readings',
+      emoji: '⚪',
+    }
+  }
+  if (value < 5) {
+    return {
+      label: 'Very Good',
+      summary: 'Clean air',
+      guidance: 'Safe for everyone',
+      emoji: '🟢',
+    }
+  }
+  if (value < 15) {
+    return {
+      label: 'Good',
+      summary: 'Low pollution',
+      guidance: 'Safe for most people',
+      emoji: '🟢',
+    }
+  }
+  if (value < 25) {
+    return {
+      label: 'Moderate',
+      summary: 'Noticeable pollution',
+      guidance: 'Sensitive people may feel effects',
+      emoji: '🟡',
+    }
+  }
+  if (value < 35) {
+    return {
+      label: 'Poor',
+      summary: 'Above safe limit',
+      guidance: 'Reduce outdoor activity',
+      emoji: '🟠',
+    }
+  }
+  if (value < 55) {
+    return {
+      label: 'Very Poor',
+      summary: 'Unhealthy',
+      guidance: 'Health effects likely',
+      emoji: '🔴',
+    }
+  }
+  return {
+    label: 'Hazardous',
+    summary: 'Dangerous',
+    guidance: 'Avoid outdoor activity',
+    emoji: '🛑',
+  }
+}
+
+const pm25Tier = computed(() => getPm25Tier(pm25CurrentValue.value))
+
+const getPm25TierColor = (tierLabel) => {
+  if (tierLabel === 'Very Good') {
+    return '#22c55e'
+  }
+  if (tierLabel === 'Good') {
+    return '#4ade80'
+  }
+  if (tierLabel === 'Moderate') {
+    return '#facc15'
+  }
+  if (tierLabel === 'Poor') {
+    return '#fb923c'
+  }
+  if (tierLabel === 'Very Poor') {
+    return '#f87171'
+  }
+  if (tierLabel === 'Hazardous') {
+    return '#dc2626'
+  }
+  return '#94a3b8'
+}
+
+const pm25Recommendations = computed(() => {
+  const tier = pm25Tier.value.label
+  const base = [
+    { emoji: '🚶', text: 'If commuting, choose routes away from main roads' },
+    { emoji: '🪟', text: 'Keep windows closed during heavy traffic' },
+  ]
+  if (tier === 'Very Good') {
+    return [
+      { emoji: '🟢', text: 'Air quality is clear' },
+      { emoji: '🌿', text: 'Enjoy outdoor activities' },
+      ...base,
+    ]
+  }
+  if (tier === 'Good') {
+    return [
+      { emoji: '🟢', text: 'Air quality is generally safe' },
+      { emoji: '🏃', text: 'Outdoor activity is fine for most people' },
+      ...base,
+    ]
+  }
+  if (tier === 'Moderate') {
+    return [
+      { emoji: '🟡', text: 'Air quality is noticeable at times' },
+      { emoji: '😷', text: 'Sensitive people may feel effects outdoors' },
+      { emoji: '🏃', text: 'Limit extended outdoor exercise if you feel symptoms' },
+      ...base,
+    ]
+  }
+  if (tier === 'Poor') {
+    return [
+      { emoji: '🟠', text: 'Air quality is above safe limits' },
+      { emoji: '🏃', text: 'Reduce outdoor activity' },
+      { emoji: '🏠', text: 'Keep strenuous exercise indoors' },
+      ...base,
+    ]
+  }
+  if (tier === 'Very Poor') {
+    return [
+      { emoji: '🔴', text: 'Air quality is unhealthy' },
+      { emoji: '🏠', text: 'Avoid prolonged outdoor activity' },
+      { emoji: '😷', text: 'Wear a mask if you must be outside' },
+      ...base,
+    ]
+  }
+  if (tier === 'Hazardous') {
+    return [
+      { emoji: '🛑', text: 'Air quality is dangerous' },
+      { emoji: '🏠', text: 'Avoid outdoor activity' },
+      { emoji: '🪟', text: 'Stay indoors with windows closed' },
+      ...base,
+    ]
+  }
+  return [{ emoji: '⚪', text: 'No recommendation available without recent data.' }]
+})
+
+// Derive safe min/max bounds for the PM2.5 gauge when trend data is sparse.
+const getPm25GaugeBounds = (stats) => {
+  const min = Number(stats?.minimum)
+  const max = Number(stats?.maximum)
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: 0, max: 1 }
+  }
+  if (max <= min) {
+    return { min, max: min + 1 }
+  }
+  return { min, max }
+}
+
+// Build the Highcharts gauge config for the PM2.5 recommendation card.
+const buildPm25GaugeOptions = ({ min, max, current, unit, color }) => ({
+  chart: {
+    type: 'solidgauge',
+    backgroundColor: 'transparent',
+    height: 260,
+  },
+  title: null,
+  pane: {
+    startAngle: -120,
+    endAngle: 120,
+    background: [
+      {
+        outerRadius: '100%',
+        innerRadius: '60%',
+        shape: 'arc',
+        borderWidth: 0,
+        backgroundColor: '#e2e8f0',
+      },
+    ],
+  },
+  tooltip: {
+    enabled: false,
+  },
+  yAxis: {
+    min,
+    max,
+    lineWidth: 0,
+    tickWidth: 0,
+    minorTickInterval: null,
+    tickAmount: 5,
+    labels: {
+      y: 16,
+      style: {
+        color: '#64748b',
+      },
+    },
+    stops: [
+      [0, color],
+      [1, color],
+    ],
+  },
+  plotOptions: {
+    solidgauge: {
+      dataLabels: {
+        y: -12,
+        borderWidth: 0,
+        useHTML: true,
+        format: `<div style="text-align:center"><span style="font-size:24px;color:#0f172a">{y:.1f}</span><br/><span style="font-size:12px;color:#64748b">${unit}</span></div>`,
+      },
+    },
+  },
+  series: [
+    {
+      name: 'PM2.5',
+      data: [current],
+      color,
+    },
+  ],
+  credits: {
+    enabled: false,
+  },
+})
+
+const pm25GaugePayload = computed(() => {
+  const bounds = getPm25GaugeBounds(pm25TrendStats.value)
+  const currentValue = pm25CurrentValue.value
+  const clampedValue = Number.isFinite(currentValue)
+    ? Math.min(Math.max(currentValue, bounds.min), bounds.max)
+    : bounds.min
+  return {
+    min: bounds.min,
+    max: bounds.max,
+    current: clampedValue,
+    unit: pm25Unit.value,
+    color: getPm25TierColor(pm25Tier.value.label),
+  }
+})
+
+// Render or update the PM2.5 gauge when the recommendations panel is visible.
+const updatePm25Gauge = async () => {
+  if (activeAirSubtab.value !== 'recommendations') {
+    return
+  }
+  await nextTick()
+  if (!pm25GaugeContainer.value) {
+    return
+  }
+  const options = buildPm25GaugeOptions(pm25GaugePayload.value)
+  if (pm25GaugeChart.value) {
+    pm25GaugeChart.value.update(options, true, true)
+    return
+  }
+  pm25GaugeChart.value = Highcharts.chart(pm25GaugeContainer.value, options)
+}
+
+const destroyPm25Gauge = () => {
+  if (pm25GaugeChart.value) {
+    pm25GaugeChart.value.destroy()
+    pm25GaugeChart.value = null
   }
 }
 
@@ -1559,6 +1907,7 @@ onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
 onMounted(maybeLoadHeatmap)
 onBeforeUnmount(destroyHeatmapMap)
+onBeforeUnmount(destroyPm25Gauge)
 watch(
   () => [route.params.suburb, route.query.state],
   () => {
@@ -1591,6 +1940,17 @@ watch(
     }
     destroyHeatmapMap()
   },
+)
+watch(
+  () => [activeAirSubtab.value, pm25GaugePayload.value],
+  () => {
+    if (activeAirSubtab.value === 'recommendations') {
+      updatePm25Gauge()
+      return
+    }
+    destroyPm25Gauge()
+  },
+  { deep: true },
 )
 watch(
   () => activeGreenSubtab.value,
