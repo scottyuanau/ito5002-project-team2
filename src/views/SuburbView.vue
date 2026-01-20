@@ -290,7 +290,7 @@ import Pm25RecommendationsPanel from '../components/Pm25RecommendationsPanel.vue
 const route = useRoute()
 const authStore = useAuthStore()
 const activeTab = ref('air')
-const activeAirSubtab = ref('summary')
+const activeAirSubtab = ref('recommendations')
 const activeGreenSubtab = ref('summary')
 const loading = ref(false)
 const errorMessage = ref('')
