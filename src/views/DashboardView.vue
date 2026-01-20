@@ -28,6 +28,18 @@
             </Message>
 
             <div v-if="authStore.isAuthenticated" class="space-y-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <Button
+                  label="Send notification"
+                  severity="secondary"
+                  size="small"
+                  :disabled="!canSendNotification"
+                  @click="handleSendNotification"
+                />
+                <p v-if="!canSendNotification" class="text-xs text-slate-500">
+                  Subscribe to at least one suburb to send notifications.
+                </p>
+              </div>
               <div
                 v-if="subscriptionsLoading"
                 class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
@@ -248,6 +260,7 @@ const subscriptionsError = ref('')
 const unsubscribingId = ref(null)
 let unsubscribeSubscriptions = null
 const userEmail = computed(() => authStore.user?.email ?? '')
+const NOTIFICATION_LAST_SENT_KEY = 'notifications:lastSent'
 const canUpdatePassword = computed(
   () => authStore.user?.providerData?.some((provider) => provider.providerId === 'password')
 )
@@ -256,6 +269,13 @@ const canSubmitPasswordUpdate = computed(
     Boolean(currentPassword.value && newPassword.value && confirmPassword.value) &&
     canUpdatePassword.value &&
     !isUpdatingPassword.value
+)
+const canSendNotification = computed(
+  () =>
+    authStore.isAuthenticated &&
+    isDbReady.value &&
+    subscriptions.value.length > 0 &&
+    !subscriptionsLoading.value
 )
 
 // Format Firestore timestamps for the enquiries list.
@@ -355,6 +375,11 @@ const handleUnsubscribe = async (subscriptionId) => {
   } finally {
     unsubscribingId.value = null
   }
+}
+
+const handleSendNotification = () => {
+  localStorage.setItem(NOTIFICATION_LAST_SENT_KEY, String(Date.now()))
+  window.dispatchEvent(new CustomEvent('notifications:sent'))
 }
 
 // Update the current user's password after basic client-side validation.
