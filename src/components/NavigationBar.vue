@@ -31,6 +31,14 @@ const hasSubscriptions = computed(() => subscriptions.value.length > 0)
 const hasNewNotification = computed(
   () => hasSubscriptions.value && lastSentAt.value > lastSeenAt.value,
 )
+const notificationsDateLabel = computed(() =>
+  new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }),
+)
 
 const items = computed(() => [
   {
@@ -458,6 +466,9 @@ watch(
     class="w-full max-w-5xl"
   >
     <div class="space-y-4">
+      <h2 class="text-2xl font-semibold text-slate-900">
+        Notifications for {{ notificationsDateLabel }}
+      </h2>
       <p v-if="notificationsError" class="text-sm text-red-600">
         {{ notificationsError }}
       </p>
