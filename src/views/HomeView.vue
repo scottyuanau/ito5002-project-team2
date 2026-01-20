@@ -281,6 +281,66 @@ const applyAirQualityPayload = (payload) => {
   pm25CurrentValue.value = extractCurrentPm25(payload)
 }
 
+const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
+  const cachedAirQuality = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
+  if (cachedAirQuality) {
+    applyAirQualityPayload(cachedAirQuality)
+    return
+  }
+
+  const airQualityUrl = getAirQualityUrl()
+  if (!airQualityUrl) {
+    throw new Error('Missing Firebase Functions base URL configuration.')
+  }
+
+  const airUrl = new URL(airQualityUrl)
+  airUrl.searchParams.set('latitude', lat.toString())
+  airUrl.searchParams.set('longitude', lon.toString())
+  airUrl.searchParams.set('current', 'pm2_5')
+  airUrl.searchParams.set('hourly', 'pm2_5')
+  airUrl.searchParams.set('past_days', '92')
+  airUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(airUrl)
+  if (!response.ok) {
+    throw new Error('Failed to fetch local air quality data.')
+  }
+  const payload = await response.json()
+  const data = payload.data || payload
+  writeCache(cacheKey, data)
+  applyAirQualityPayload(data)
+}
+
+const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
+  const cachedAirQuality = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
+  if (cachedAirQuality) {
+    applyAirQualityPayload(cachedAirQuality)
+    return
+  }
+
+  const airQualityUrl = getAirQualityUrl()
+  if (!airQualityUrl) {
+    throw new Error('Missing Firebase Functions base URL configuration.')
+  }
+
+  const airUrl = new URL(airQualityUrl)
+  airUrl.searchParams.set('suburb', suburbName)
+  airUrl.searchParams.set('state', state)
+  airUrl.searchParams.set('current', 'pm2_5')
+  airUrl.searchParams.set('hourly', 'pm2_5')
+  airUrl.searchParams.set('past_days', '92')
+  airUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(airUrl)
+  if (!response.ok) {
+    throw new Error('Failed to fetch local air quality data.')
+  }
+  const payload = await response.json()
+  const data = payload.data || payload
+  writeCache(cacheKey, data)
+  applyAirQualityPayload(data)
+}
+
 const loadLocalAirQuality = async () => {
   locationError.value = ''
   airQualityError.value = ''
@@ -291,10 +351,22 @@ const loadLocalAirQuality = async () => {
   try {
     position = await getCurrentPosition()
   } catch (error) {
-    locationError.value =
-      error instanceof Error ? error.message : 'Unable to access your current location.'
+    locationLabel.value = 'Sydney'
     locationLoading.value = false
-    airQualityLoading.value = false
+    try {
+      await loadAirQualityBySuburb({
+        suburbName: 'Sydney',
+        state: 'NSW',
+        cacheKey: `${HOME_AIR_CACHE_PREFIX}sydney|NSW`,
+      })
+    } catch (fallbackError) {
+      airQualityError.value =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : 'Unable to load local air quality.'
+    } finally {
+      airQualityLoading.value = false
+    }
     return
   }
 
@@ -328,36 +400,8 @@ const loadLocalAirQuality = async () => {
     }
   }
 
-  const cachedAirQuality = readCacheWithTtl(airCacheKey, HOME_CACHE_TTL_MS)
-  if (cachedAirQuality) {
-    applyAirQualityPayload(cachedAirQuality)
-    airQualityLoading.value = false
-    return
-  }
-
   try {
-    const airQualityUrl = getAirQualityUrl()
-    if (!airQualityUrl) {
-      airQualityError.value = 'Missing Firebase Functions base URL configuration.'
-      return
-    }
-
-    const airUrl = new URL(airQualityUrl)
-    airUrl.searchParams.set('latitude', lat.toString())
-    airUrl.searchParams.set('longitude', lon.toString())
-    airUrl.searchParams.set('current', 'pm2_5')
-    airUrl.searchParams.set('hourly', 'pm2_5')
-    airUrl.searchParams.set('past_days', '92')
-    airUrl.searchParams.set('timezone', 'auto')
-
-    const response = await fetch(airUrl)
-    if (!response.ok) {
-      throw new Error('Failed to fetch local air quality data.')
-    }
-    const payload = await response.json()
-    const data = payload.data || payload
-    writeCache(airCacheKey, data)
-    applyAirQualityPayload(data)
+    await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
   } catch (error) {
     airQualityError.value =
       error instanceof Error ? error.message : 'Unable to load local air quality.'
