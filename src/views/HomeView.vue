@@ -39,6 +39,9 @@
       <p v-else-if="locationLoading || airQualityLoading" class="text-sm text-slate-500">
         Loading local air quality...
       </p>
+      <p v-if="airQualityNotice" class="text-sm text-amber-700">
+        {{ airQualityNotice }}
+      </p>
       <Pm25RecommendationsPanel
         v-if="!locationError && !airQualityError"
         layout="split"
@@ -162,11 +165,13 @@ const locationLoading = ref(false)
 const locationError = ref('')
 const airQualityLoading = ref(false)
 const airQualityError = ref('')
+const airQualityNotice = ref('')
 const pm25CurrentValue = ref(null)
 const pm25TrendValues = ref([])
 const pm25Unit = ref('ug/m3')
 
 const HOME_CACHE_TTL_MS = 60 * 60 * 1000
+const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
 const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 
@@ -259,12 +264,31 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
       return null
     }
     if (Date.now() - parsed.fetchedAt > ttlMs) {
-      localStorage.removeItem(cacheKey)
       return null
     }
     return parsed.data
   } catch {
     localStorage.removeItem(cacheKey)
+    return null
+  }
+}
+
+// Read cached entries without enforcing a TTL (used for stale fallback messaging).
+const readCacheEntry = (cacheKey) => {
+  const raw = localStorage.getItem(cacheKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (typeof parsed.fetchedAt !== 'number' || !parsed.data) {
+      return null
+    }
+    return parsed
+  } catch {
     return null
   }
 }
@@ -357,6 +381,35 @@ const buildDailyPm25Series = (payload) => {
   return { values: dailyValues, unit: hourlyUnits.pm2_5 || 'ug/m3' }
 }
 
+// Normalize a string for deterministic seed generation.
+const normalizeSeedValue = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+// Hash a seed string into a stable 32-bit number.
+const hashSeed = (value) => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+// Generate deterministic random numbers from a seed.
+const seededRandom = (seed) => {
+  let value = seed >>> 0
+  return () => {
+    value |= 0
+    value = (value + 0x6d2b79f5) | 0
+    let t = Math.imul(value ^ (value >>> 15), 1 | value)
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 // Pull the latest PM2.5 value from current or hourly data.
 const extractCurrentPm25 = (payload) => {
   const current = payload?.current?.pm2_5
@@ -380,12 +433,84 @@ const applyAirQualityPayload = (payload) => {
   pm25CurrentValue.value = extractCurrentPm25(payload)
 }
 
+const formatFetchedAt = (timestamp) => {
+  if (!timestamp) {
+    return 'an earlier time'
+  }
+  return new Date(timestamp).toLocaleString()
+}
+
+const buildStaleNotice = (timestamp) =>
+  `Data provider limit reached. Showing last saved data from ${formatFetchedAt(timestamp)}.`
+
+const buildSimulatedNotice = () =>
+  'Data provider limit reached. Showing simulated data for now.'
+
+// Pull a readable error message from failed API responses.
+const getApiErrorMessage = async (response, fallbackMessage) => {
+  let message = fallbackMessage
+  try {
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const payload = await response.json()
+      if (payload?.error) {
+        message = payload.error
+      }
+    } else {
+      const text = await response.text()
+      if (text) {
+        message = text
+      }
+    }
+  } catch {
+    message = fallbackMessage
+  }
+  if (response.status === 429 && !/quota/i.test(message)) {
+    message = 'The data provider quota has been exceeded. Please try again later.'
+  }
+  return message
+}
+
+const isQuotaMessage = (message, status) =>
+  status === 429 || (typeof message === 'string' && /quota/i.test(message))
+
+// Build a simulated PM2.5 payload when live data is unavailable.
+const buildSyntheticPm25Payload = (seedKey, days = 7) => {
+  const random = seededRandom(hashSeed(normalizeSeedValue(seedKey)))
+  const hours = Math.max(24, days * 24)
+  const now = new Date()
+  const start = new Date(now.getTime() - (hours - 1) * 60 * 60 * 1000)
+  const time = []
+  const pm2_5 = []
+  const base = 8 + random() * 12
+  const variance = 10 + random() * 8
+
+  for (let index = 0; index < hours; index += 1) {
+    const timestamp = new Date(start.getTime() + index * 60 * 60 * 1000)
+    time.push(timestamp.toISOString().slice(0, 16))
+    const dailyWave = Math.sin((index / 24) * Math.PI * 2) * 3
+    const jitter = (random() - 0.5) * variance
+    const value = Math.max(1, Number((base + dailyWave + jitter).toFixed(2)))
+    pm2_5.push(value)
+  }
+
+  const currentValue = pm2_5[pm2_5.length - 1] ?? null
+
+  return {
+    current: { pm2_5: currentValue },
+    current_units: { pm2_5: 'ug/m3' },
+    hourly: { time, pm2_5 },
+    hourly_units: { pm2_5: 'ug/m3' },
+  }
+}
+
 const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
   const cachedAirQuality = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
   if (cachedAirQuality) {
     applyAirQualityPayload(cachedAirQuality)
     return
   }
+  const staleCache = readCacheEntry(cacheKey)
 
   const airQualityUrl = getAirQualityUrl()
   if (!airQualityUrl) {
@@ -402,7 +527,23 @@ const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
 
   const response = await fetch(airUrl)
   if (!response.ok) {
-    throw new Error('Failed to fetch local air quality data.')
+    const message = await getApiErrorMessage(
+      response,
+      'Failed to fetch local air quality data.',
+    )
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
+      applyAirQualityPayload(staleCache.data)
+      airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
+      return
+    }
+    if (isQuotaMessage(message, response.status)) {
+      const seedKey = `${lat}|${lon}|${new Date().toDateString()}`
+      const syntheticPayload = buildSyntheticPm25Payload(seedKey)
+      applyAirQualityPayload(syntheticPayload)
+      airQualityNotice.value = buildSimulatedNotice()
+      return
+    }
+    throw new Error(message)
   }
   const payload = await response.json()
   const data = payload.data || payload
@@ -416,6 +557,7 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
     applyAirQualityPayload(cachedAirQuality)
     return
   }
+  const staleCache = readCacheEntry(cacheKey)
 
   const airQualityUrl = getAirQualityUrl()
   if (!airQualityUrl) {
@@ -432,7 +574,23 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
 
   const response = await fetch(airUrl)
   if (!response.ok) {
-    throw new Error('Failed to fetch local air quality data.')
+    const message = await getApiErrorMessage(
+      response,
+      'Failed to fetch local air quality data.',
+    )
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
+      applyAirQualityPayload(staleCache.data)
+      airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
+      return
+    }
+    if (isQuotaMessage(message, response.status)) {
+      const seedKey = `${suburbName}|${state}|${new Date().toDateString()}`
+      const syntheticPayload = buildSyntheticPm25Payload(seedKey)
+      applyAirQualityPayload(syntheticPayload)
+      airQualityNotice.value = buildSimulatedNotice()
+      return
+    }
+    throw new Error(message)
   }
   const payload = await response.json()
   const data = payload.data || payload
@@ -443,6 +601,7 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
 const loadLocalAirQuality = async () => {
   locationError.value = ''
   airQualityError.value = ''
+  airQualityNotice.value = ''
   locationLoading.value = true
   airQualityLoading.value = true
 

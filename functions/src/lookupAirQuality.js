@@ -11,6 +11,24 @@ const setCorsHeaders = (res) => {
   res.set("Access-Control-Allow-Headers", "Content-Type");
 };
 
+// Extract a readable error message from upstream responses.
+const getUpstreamErrorMessage = async (response) => {
+  try {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      if (payload && typeof payload.error === "string") {
+        return payload.error;
+      }
+    }
+    const text = await response.text();
+    return text || "";
+  } catch (error) {
+    logger.warn("Failed to parse upstream error body", {error});
+    return "";
+  }
+};
+
 const parseNumber = (value) => {
   const num = Number.parseFloat(value);
   return Number.isFinite(num) ? num : null;
@@ -397,7 +415,19 @@ module.exports = onRequest(async (req, res) => {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      logger.error("Air quality request failed", {status: response.status});
+      const upstreamMessage = await getUpstreamErrorMessage(response);
+      const isQuotaError =
+        response.status === 429 || /quota/i.test(upstreamMessage || "");
+      logger.error("Air quality request failed", {
+        status: response.status,
+        upstreamMessage,
+      });
+      if (isQuotaError) {
+        res.status(429).json({
+          error: "The data provider quota has been exceeded. Please try again later.",
+        });
+        return;
+      }
       res.status(502).json({error: "Failed to fetch air quality data."});
       return;
     }

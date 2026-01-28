@@ -87,6 +87,9 @@
               <p v-else-if="trendLoading" class="text-sm text-slate-500">
                 Loading air quality trend data...
               </p>
+              <p v-if="trendNotice" class="text-sm text-amber-700">
+                {{ trendNotice }}
+              </p>
               <Pm25RecommendationsPanel
                 :title="`Today in ${suburbName}`"
                 :current-value="pm25CurrentValue"
@@ -97,6 +100,9 @@
             <div v-else-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
               <p v-if="errorMessage" class="text-sm text-red-600">{{ errorMessage }}</p>
+              <p v-if="airQualityNotice" class="text-sm text-amber-700">
+                {{ airQualityNotice }}
+              </p>
               <div class="rounded-2xl border border-slate-200 bg-white p-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -118,6 +124,9 @@
                 <p v-if="heatmapError" class="mt-2 text-sm text-red-600">{{ heatmapError }}</p>
                 <p v-else-if="heatmapLoading" class="mt-2 text-sm text-slate-500">
                   Loading heatmap data...
+                </p>
+                <p v-if="heatmapNotice" class="mt-2 text-sm text-amber-700">
+                  {{ heatmapNotice }}
                 </p>
                 <div
                   class="mt-3 h-72 w-full overflow-hidden rounded-xl border border-slate-100 bg-slate-50"
@@ -161,6 +170,9 @@
               <p v-if="trendError" class="text-sm text-red-600">{{ trendError }}</p>
               <p v-else-if="trendLoading" class="text-sm text-slate-500">
                 Loading trend data...
+              </p>
+              <p v-if="trendNotice" class="text-sm text-amber-700">
+                {{ trendNotice }}
               </p>
               <p
                 v-else-if="!trendSeries.labels.length"
@@ -294,8 +306,10 @@ const activeAirSubtab = ref('recommendations')
 const activeGreenSubtab = ref('summary')
 const loading = ref(false)
 const errorMessage = ref('')
+const airQualityNotice = ref('')
 const trendLoading = ref(false)
 const trendError = ref('')
+const trendNotice = ref('')
 const greenLoading = ref(false)
 const greenError = ref('')
 const greenTrendLoading = ref(false)
@@ -312,6 +326,7 @@ const heatmapContainer = ref(null)
 const heatmapMap = ref(null)
 const heatmapLoading = ref(false)
 const heatmapError = ref('')
+const heatmapNotice = ref('')
 const heatmapLoaded = ref(false)
 const heatmapPoints = ref([])
 const selectedHeatmapMetric = ref('pm2_5')
@@ -365,6 +380,7 @@ const canToggleSubscription = computed(
 
 const slugToQuery = (slug) => slug.replace(/-/g, ' ').trim()
 const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_STALE_MS = 24 * 60 * 60 * 1000
 const HEATMAP_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
 const TREND_CACHE_PREFIX = 'airQualityTrendCache:'
@@ -401,7 +417,6 @@ const readCache = (cacheKey) => {
       return null
     }
     if (Date.now() - parsed.fetchedAt > CACHE_TTL_MS) {
-      localStorage.removeItem(cacheKey)
       return null
     }
     return parsed.data
@@ -426,7 +441,6 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
       return null
     }
     if (Date.now() - parsed.fetchedAt > ttlMs) {
-      localStorage.removeItem(cacheKey)
       return null
     }
     return parsed.data
@@ -436,9 +450,141 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
   }
 }
 
+// Read cached entries without enforcing a TTL (used for stale fallback messaging).
+const readCacheEntry = (cacheKey) => {
+  const raw = localStorage.getItem(cacheKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (typeof parsed.fetchedAt !== 'number' || !parsed.data) {
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 const writeCache = (cacheKey, data) => {
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
   localStorage.setItem(cacheKey, payload)
+}
+
+const formatFetchedAt = (timestamp) => {
+  if (!timestamp) {
+    return 'an earlier time'
+  }
+  return new Date(timestamp).toLocaleString()
+}
+
+const buildStaleNotice = (timestamp) =>
+  `Data provider limit reached. Showing last saved data from ${formatFetchedAt(timestamp)}.`
+
+const buildSimulatedNotice = () =>
+  'Data provider limit reached. Showing simulated data for now.'
+
+// Pull a readable error message from failed API responses.
+const getApiErrorMessage = async (response, fallbackMessage) => {
+  let message = fallbackMessage
+  try {
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const payload = await response.json()
+      if (payload?.error) {
+        message = payload.error
+      }
+    } else {
+      const text = await response.text()
+      if (text) {
+        message = text
+      }
+    }
+  } catch {
+    message = fallbackMessage
+  }
+  if (response.status === 429 && !/quota/i.test(message)) {
+    message = 'The data provider quota has been exceeded. Please try again later.'
+  }
+  return message
+}
+
+const isQuotaMessage = (message, status) =>
+  status === 429 || (typeof message === 'string' && /quota/i.test(message))
+
+// Build a simulated air quality payload for summary and trend views.
+const buildSyntheticAirQualityPayload = (seedKey, days = 7) => {
+  const random = seededRandom(hashSeed(normalizeSeedValue(seedKey)))
+  const hours = Math.max(24, days * 24)
+  const now = new Date()
+  const start = new Date(now.getTime() - (hours - 1) * 60 * 60 * 1000)
+  const time = []
+  const hourly = {}
+  const hourlyUnits = {}
+  const current = {}
+  const currentUnits = {}
+
+  const metricConfigs = {
+    pm2_5: { base: 10, variance: 15 },
+    pm10: { base: 18, variance: 22 },
+    carbon_monoxide: { base: 300, variance: 250 },
+    nitrogen_dioxide: { base: 20, variance: 15 },
+    sulphur_dioxide: { base: 5, variance: 6 },
+    ozone: { base: 30, variance: 20 },
+  }
+
+  Object.keys(metricConfigs).forEach((key) => {
+    hourly[key] = []
+    hourlyUnits[key] = 'ug/m3'
+    currentUnits[key] = 'ug/m3'
+  })
+
+  for (let index = 0; index < hours; index += 1) {
+    const timestamp = new Date(start.getTime() + index * 60 * 60 * 1000)
+    time.push(timestamp.toISOString().slice(0, 16))
+
+    Object.entries(metricConfigs).forEach(([key, { base, variance }]) => {
+      const dailyWave = Math.sin((index / 24) * Math.PI * 2) * (variance * 0.2)
+      const jitter = (random() - 0.5) * variance
+      const value = Math.max(1, Number((base + dailyWave + jitter).toFixed(2)))
+      hourly[key].push(value)
+    })
+  }
+
+  Object.keys(metricConfigs).forEach((key) => {
+    const series = hourly[key]
+    current[key] = series[series.length - 1] ?? null
+  })
+
+  return {
+    current,
+    current_units: currentUnits,
+    hourly: { time, ...hourly },
+    hourly_units: hourlyUnits,
+  }
+}
+
+// Build simulated heatmap points with metrics for map rendering.
+const buildSyntheticHeatmapPoints = (center, seedKey) => {
+  const points = buildHeatmapPoints(center, seedKey)
+  return points.map((point, index) => {
+    const random = seededRandom(hashSeed(`${seedKey}-${index}`))
+    return {
+      ...point,
+      metrics: {
+        pm2_5: Number((5 + random() * 40).toFixed(2)),
+        pm10: Number((10 + random() * 60).toFixed(2)),
+        carbon_monoxide: Number((200 + random() * 600).toFixed(2)),
+        nitrogen_dioxide: Number((10 + random() * 40).toFixed(2)),
+        sulphur_dioxide: Number((2 + random() * 10).toFixed(2)),
+        ozone: Number((10 + random() * 50).toFixed(2)),
+      },
+    }
+  })
 }
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
@@ -1081,6 +1227,7 @@ const loadHeatmapData = async () => {
   const airQualityUrl = getAirQualityUrl()
 
   heatmapError.value = ''
+  heatmapNotice.value = ''
 
   if (!suburbQuery || !state) {
     heatmapError.value = 'Missing suburb or state. Please search again.'
@@ -1106,8 +1253,10 @@ const loadHeatmapData = async () => {
     fitHeatmapBounds()
     return
   }
+  const staleCache = readCacheEntry(cacheKey)
 
   heatmapLoading.value = true
+  heatmapNotice.value = ''
 
   try {
     const seedKey = `${suburbQuery}|${state.toUpperCase()}`
@@ -1123,7 +1272,16 @@ const loadHeatmapData = async () => {
         )
         const response = await fetch(airUrl)
         if (!response.ok) {
-          throw new Error('Failed to fetch heatmap air quality data.')
+          const message = await getApiErrorMessage(
+            response,
+            'Failed to fetch heatmap air quality data.',
+          )
+          if (isQuotaMessage(message, response.status)) {
+            const quotaError = new Error(message)
+            quotaError.isQuota = true
+            throw quotaError
+          }
+          throw new Error(message)
         }
         const payload = await response.json()
         return {
@@ -1138,7 +1296,26 @@ const loadHeatmapData = async () => {
     applyHeatmapUpdates()
     fitHeatmapBounds()
   } catch (error) {
-    heatmapError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    if (
+      staleCache?.data &&
+      Array.isArray(staleCache.data.points) &&
+      Date.now() - staleCache.fetchedAt <= CACHE_STALE_MS
+    ) {
+      heatmapPoints.value = staleCache.data.points
+      heatmapLoaded.value = true
+      heatmapNotice.value = buildStaleNotice(staleCache.fetchedAt)
+      applyHeatmapUpdates()
+      fitHeatmapBounds()
+    } else if (error?.isQuota) {
+      const seedKey = `${suburbQuery}|${state.toUpperCase()}`
+      heatmapPoints.value = buildSyntheticHeatmapPoints(lgaCoordinates.value, seedKey)
+      heatmapLoaded.value = true
+      heatmapNotice.value = buildSimulatedNotice()
+      applyHeatmapUpdates()
+      fitHeatmapBounds()
+    } else {
+      heatmapError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    }
   } finally {
     heatmapLoading.value = false
   }
@@ -1164,6 +1341,7 @@ const resetHeatmapState = () => {
   heatmapLoaded.value = false
   heatmapPoints.value = []
   heatmapError.value = ''
+  heatmapNotice.value = ''
   applyHeatmapUpdates()
 }
 
@@ -1174,6 +1352,7 @@ const loadAirQuality = async () => {
   const airQualityUrl = getAirQualityUrl()
 
   errorMessage.value = ''
+  airQualityNotice.value = ''
 
   if (!suburbQuery || !state) {
     errorMessage.value = 'Missing suburb or state. Please search again.'
@@ -1191,6 +1370,7 @@ const loadAirQuality = async () => {
     airQualityRows.value = buildAirQualityRows(cachedData)
     return
   }
+  const staleCache = readCacheEntry(cacheKey)
 
   loading.value = true
 
@@ -1209,7 +1389,16 @@ const loadAirQuality = async () => {
 
     const airResponse = await fetch(airUrl)
     if (!airResponse.ok) {
-      throw new Error('Failed to fetch air quality data.')
+      const message = await getApiErrorMessage(airResponse, 'Failed to fetch air quality data.')
+      if (isQuotaMessage(message, airResponse.status)) {
+        const dateStamp = new Date().toDateString()
+        const seedKey = `${suburbQuery}|${state.toUpperCase()}|${dateStamp}`
+        const syntheticPayload = buildSyntheticAirQualityPayload(seedKey)
+        airQualityRows.value = buildAirQualityRows(syntheticPayload)
+        airQualityNotice.value = buildSimulatedNotice()
+        return
+      }
+      throw new Error(message)
     }
 
     const airPayload = await airResponse.json()
@@ -1217,8 +1406,13 @@ const loadAirQuality = async () => {
     writeCache(cacheKey, data)
     airQualityRows.value = buildAirQualityRows(data)
   } catch (error) {
-    airQualityRows.value = buildAirQualityRows(null)
-    errorMessage.value = error instanceof Error ? error.message : 'Unexpected error.'
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= CACHE_STALE_MS) {
+      airQualityRows.value = buildAirQualityRows(staleCache.data)
+      airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
+    } else {
+      airQualityRows.value = buildAirQualityRows(null)
+      errorMessage.value = error instanceof Error ? error.message : 'Unexpected error.'
+    }
   } finally {
     loading.value = false
   }
@@ -1232,6 +1426,7 @@ const loadAirQualityTrend = async () => {
   const airQualityUrl = getAirQualityUrl()
 
   trendError.value = ''
+  trendNotice.value = ''
 
   if (!suburbQuery || !state) {
     trendError.value = 'Missing suburb or state. Please search again.'
@@ -1250,6 +1445,7 @@ const loadAirQualityTrend = async () => {
     trendLoaded.value = true
     return
   }
+  const staleCache = readCacheEntry(cacheKey)
 
   trendLoading.value = true
 
@@ -1266,7 +1462,20 @@ const loadAirQualityTrend = async () => {
 
     const airResponse = await fetch(airUrl)
     if (!airResponse.ok) {
-      throw new Error('Failed to fetch air quality trend data.')
+      const message = await getApiErrorMessage(
+        airResponse,
+        'Failed to fetch air quality trend data.',
+      )
+      if (isQuotaMessage(message, airResponse.status)) {
+        const dateStamp = new Date().toDateString()
+        const seedKey = `${suburbQuery}|${state.toUpperCase()}|${dateStamp}`
+        const syntheticPayload = buildSyntheticAirQualityPayload(seedKey)
+        trendSeries.value = buildTrendSeries(syntheticPayload)
+        trendLoaded.value = true
+        trendNotice.value = buildSimulatedNotice()
+        return
+      }
+      throw new Error(message)
     }
 
     const airPayload = await airResponse.json()
@@ -1275,8 +1484,14 @@ const loadAirQualityTrend = async () => {
     trendSeries.value = buildTrendSeries(data)
     trendLoaded.value = true
   } catch (error) {
-    trendSeries.value = { labels: [], series: {}, units: {} }
-    trendError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= CACHE_STALE_MS) {
+      trendSeries.value = buildTrendSeries(staleCache.data)
+      trendLoaded.value = true
+      trendNotice.value = buildStaleNotice(staleCache.fetchedAt)
+    } else {
+      trendSeries.value = { labels: [], series: {}, units: {} }
+      trendError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    }
   } finally {
     trendLoading.value = false
   }
