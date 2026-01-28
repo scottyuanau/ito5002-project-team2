@@ -40,6 +40,7 @@ const notificationsDateLabel = computed(() =>
   }),
 )
 
+// updated menu items
 const items = computed(() => [
   {
     label: 'Home',
@@ -56,6 +57,16 @@ const items = computed(() => [
     command: () => {
       if (route.path !== '/compare') {
         router.push('/compare')
+      }
+    },
+  },
+  // new Plant Tips menu item
+  {
+    label: 'Plant Tips',
+    icon: 'pi pi-leaf',
+    command: () => {
+      if (route.path !== '/plant-tips') {
+        router.push('/plant-tips')
       }
     },
   },
@@ -83,7 +94,7 @@ const items = computed(() => [
     : []),
 ])
 
-// Read a cached payload when it is still within the TTL window.
+
 const readCacheWithTtl = (cacheKey, ttlMs) => {
   const raw = localStorage.getItem(cacheKey)
   if (!raw) {
@@ -108,7 +119,6 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
   }
 }
 
-// Persist a payload with a timestamp so we can expire it later.
 const writeCache = (cacheKey, data) => {
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
   localStorage.setItem(cacheKey, payload)
@@ -116,7 +126,6 @@ const writeCache = (cacheKey, data) => {
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 
-// Build daily PM2.5 averages from hourly data for the recommendations panel.
 const buildDailyPm25Series = (payload) => {
   const hourly = payload?.hourly || {}
   const hourlyUnits = payload?.hourly_units || {}
@@ -170,7 +179,6 @@ const buildDailyPm25Series = (payload) => {
   return { values: dailyValues, unit: hourlyUnits.pm2_5 || 'ug/m3' }
 }
 
-// Pull the latest PM2.5 value from current or hourly data.
 const extractCurrentPm25 = (payload) => {
   const current = payload?.current?.pm2_5
   if (Number.isFinite(Number(current))) {
@@ -214,7 +222,6 @@ const ensureDailyNotification = () => {
   refreshNotificationStatus()
 }
 
-// Listen for LGA subscription updates for the current user.
 const setupSubscriptionListener = () => {
   if (!db || !authStore.user?.uid) {
     subscriptions.value = []
@@ -321,13 +328,11 @@ const handleNotificationEvent = () => {
   ensureDailyNotification()
 }
 
-// Handle user logout from the avatar menu.
 const handleLogout = async () => {
   await authStore.logout()
   router.push('/login')
 }
 
-// Keep the menu open briefly after mouse leaves to allow clicking.
 const openUserMenu = () => {
   if (closeMenuTimeoutId) {
     clearTimeout(closeMenuTimeoutId)
@@ -336,7 +341,6 @@ const openUserMenu = () => {
   isUserMenuOpen.value = true
 }
 
-// Delay closing to avoid flicker when moving from avatar to menu.
 const scheduleUserMenuClose = () => {
   if (closeMenuTimeoutId) {
     clearTimeout(closeMenuTimeoutId)
@@ -385,9 +389,7 @@ watch(
     class="w-full rounded-full border border-black/10 bg-white/90 px-4 py-2 shadow-xl backdrop-blur"
     :model="items"
     :pt="{
-      root: {
-        class: 'w-full rounded-full border-none bg-transparent flex items-center gap-3',
-      },
+      root: { class: 'w-full rounded-full border-none bg-transparent flex items-center gap-3' },
       start: { class: 'flex items-center' },
       rootList: { class: 'ml-auto flex items-center gap-2' },
       end: { class: 'flex items-center' },
@@ -409,6 +411,7 @@ watch(
         <span>AirScape</span>
       </RouterLink>
     </template>
+
     <template #end>
       <div v-if="authStore.isAuthenticated" class="relative flex items-center">
         <button
@@ -423,6 +426,7 @@ watch(
             class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
           ></span>
         </button>
+
         <button
           type="button"
           class="rounded-full border border-black/10 bg-white/70 p-1 shadow-sm transition hover:bg-white cursor-pointer"
@@ -434,11 +438,10 @@ watch(
         >
           <img src="/avatar.png" alt="User avatar" class="h-9 w-9 rounded-full object-cover" />
         </button>
+
         <div
           class="absolute right-0 top-full mt-2 w-44 rounded-2xl border border-black/10 bg-white p-2 text-sm text-slate-700 shadow-lg transition-opacity duration-150"
-          :class="
-            isUserMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          "
+          :class="isUserMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
           @mouseenter="openUserMenu"
           @mouseleave="scheduleUserMenuClose"
           @focusin="openUserMenu"

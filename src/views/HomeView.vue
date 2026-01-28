@@ -1,5 +1,6 @@
 <template>
   <div class="flex w-full flex-col gap-20">
+    <!-- Hero -->
     <section>
       <div class="relative h-96 w-full overflow-hidden shadow-sm md:h-120">
         <img src="/banner.jpg" alt="Environmental banner" class="h-full w-full object-cover" />
@@ -21,6 +22,8 @@
         </div>
       </div>
     </section>
+
+    <!-- Today in your area -->
     <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
       <div class="space-y-2 text-center">
         <h2 class="text-3xl font-semibold text-slate-900">
@@ -45,6 +48,28 @@
         :unit="pm25Unit"
       />
     </section>
+
+    <!-- Daily air-friendly habit card -->
+    <section class="mx-auto flex w-full max-w-3xl px-6">
+      <div
+        class="w-full rounded-2xl border border-emerald-100 bg-emerald-50/70 p-6 text-left shadow-sm"
+      >
+        <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
+          Daily air-friendly habit
+        </p>
+        <h3 class="mt-3 text-lg font-semibold text-slate-900">
+          {{ todaysTip.title }}
+        </h3>
+        <p class="mt-2 text-sm text-slate-700">
+          {{ todaysTip.description }}
+        </p>
+        <p class="mt-3 text-xs text-slate-500">
+          Small choices at home add up to cleaner air for your street and city.
+        </p>
+      </div>
+    </section>
+
+    <!-- Find a suburb -->
     <section class="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 self-start px-6">
       <div class="space-y-2 text-center">
         <h2 class="text-3xl font-semibold text-slate-900">Find a suburb</h2>
@@ -67,6 +92,8 @@
         <Button type="submit" label="Search" class="w-full sm:w-auto" :disabled="!canSearch" />
       </form>
     </section>
+
+    <!-- Popular cities -->
     <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
       <div class="space-y-2 text-center">
         <h2 class="text-3xl font-semibold text-slate-900">Popular Cities</h2>
@@ -144,6 +171,78 @@ const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
+
+// Daily tips for individuals / families
+const airTips = [
+  {
+    title: 'Swap short car trips for walking or cycling',
+    description:
+      'Many car trips are under 2–3 km. When you can, walk or ride instead to cut traffic pollution and boost your own fitness.',
+  },
+  {
+    title: 'Use public transport or car-share for regular commutes',
+    description:
+      'Buses, trains and shared car trips mean fewer vehicles on the road and lower per-person emissions each day.',
+  },
+  {
+    title: 'Plan errands to combine multiple stops in one trip',
+    description:
+      'Batch shopping, school runs and appointments together so you drive fewer kilometres overall in a week.',
+  },
+  {
+    title: 'Avoid idling the car outside schools and shops',
+    description:
+      'Turn off your engine when parked or waiting. Idling burns fuel and creates extra pollution right where people are breathing.',
+  },
+  {
+    title: 'Keep your car serviced and tyres correctly inflated',
+    description:
+      'Well-maintained vehicles use less fuel and release fewer pollutants. Check tyre pressure and service dates regularly.',
+  },
+  {
+    title: 'Choose electric or induction appliances where possible',
+    description:
+      'If you’re upgrading, pick electric stoves and heaters instead of gas to cut indoor and outdoor air pollution over time.',
+  },
+  {
+    title: 'Ventilate your home when outdoor air is healthy',
+    description:
+      'On days with good air quality, open windows on opposite sides of your home to flush out indoor pollutants and moisture.',
+  },
+  {
+    title: 'Use the rangehood or exhaust fan while cooking',
+    description:
+      'Cooking can release smoke and tiny particles. Turn on your exhaust fan and keep filters clean to pull fumes outside.',
+  },
+  {
+    title: 'Avoid smoking or burning incense indoors',
+    description:
+      'Second-hand smoke, incense and candles add fine particles to indoor air. Keep these outside and choose low-fragrance cleaners.',
+  },
+  {
+    title: 'Dry clothes using sunshine and breeze when you can',
+    description:
+      'Use outdoor lines or a rack near an open window instead of a dryer to save energy and keep indoor humidity balanced.',
+  },
+  {
+    title: 'Plant more greenery around your home or balcony',
+    description:
+      'Trees and shrubs help shade streets, catch dust and make walking more pleasant, encouraging low-pollution transport choices.',
+  },
+  {
+    title: 'Make air-friendly choices a family conversation',
+    description:
+      'Talk with kids about walking to school, turning off lights and checking air-quality alerts so everyone can share the effort.',
+  },
+]
+
+// pick a stable "tip of the day" based on the calendar day
+const dailyTipIndex = computed(() => {
+  const dayNumber = Math.floor(Date.now() / (1000 * 60 * 60 * 24))
+  return dayNumber % airTips.length
+})
+
+const todaysTip = computed(() => airTips[dailyTipIndex.value])
 
 // Read a cached payload when it is still within the TTL window.
 const readCacheWithTtl = (cacheKey, ttlMs) => {
