@@ -3,3 +3,32 @@
 #app {
   min-height: 100vh;
 }
+
+/* === Accessibility helper classes for AirScape === */
+
+/* Larger base text size */
+body.airscape-large-text {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+@media (min-width: 1024px) {
+  body.airscape-large-text {
+    font-size: 19px;
+  }
+}
+
+/* High contrast mode */
+body.airscape-high-contrast {
+  background-color: #020617; /* slate-950 */
+  color: #f9fafb; /* slate-50 */
+}
+
+body.airscape-high-contrast a {
+  color: #22c55e; /* emerald-500 */
+}
+
+/* Always underline links */
+body.airscape-underline-links a {
+  text-decoration: underline;
+}

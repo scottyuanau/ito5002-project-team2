@@ -94,7 +94,6 @@ const items = computed(() => [
     : []),
 ])
 
-
 const readCacheWithTtl = (cacheKey, ttlMs) => {
   const raw = localStorage.getItem(cacheKey)
   if (!raw) {
@@ -413,50 +412,61 @@ watch(
     </template>
 
     <template #end>
-      <div v-if="authStore.isAuthenticated" class="relative flex items-center">
-        <button
-          type="button"
-          class="relative mr-2 rounded-full border border-black/10 bg-white/70 p-2 text-slate-700 shadow-sm transition hover:bg-white cursor-pointer"
-          aria-label="Open notifications"
-          @click="openNotifications"
+      <div class="flex items-center gap-3">
+        <!-- Accessibility pill (always visible) -->
+        <RouterLink
+          to="/accessibility"
+          class="rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 shadow-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
         >
-          <i class="pi pi-bell text-sm"></i>
-          <span
-            v-if="hasNewNotification"
-            class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
-          ></span>
-        </button>
+          Accessibility
+        </RouterLink>
 
-        <button
-          type="button"
-          class="rounded-full border border-black/10 bg-white/70 p-1 shadow-sm transition hover:bg-white cursor-pointer"
-          aria-label="Open user menu"
-          @mouseenter="openUserMenu"
-          @mouseleave="scheduleUserMenuClose"
-          @focusin="openUserMenu"
-          @focusout="scheduleUserMenuClose"
-        >
-          <img src="/avatar.png" alt="User avatar" class="h-9 w-9 rounded-full object-cover" />
-        </button>
-
-        <div
-          class="absolute right-0 top-full mt-2 w-44 rounded-2xl border border-black/10 bg-white p-2 text-sm text-slate-700 shadow-lg transition-opacity duration-150"
-          :class="isUserMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
-          @mouseenter="openUserMenu"
-          @mouseleave="scheduleUserMenuClose"
-          @focusin="openUserMenu"
-          @focusout="scheduleUserMenuClose"
-        >
-          <RouterLink to="/dashboard" class="block rounded-lg px-3 py-2 hover:bg-slate-100">
-            Dashboard
-          </RouterLink>
+        <!-- Notifications and user menu (only if authenticated) -->
+        <div v-if="authStore.isAuthenticated" class="relative flex items-center">
           <button
             type="button"
-            class="w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100"
-            @click="handleLogout"
+            class="relative mr-2 rounded-full border border-black/10 bg-white/70 p-2 text-slate-700 shadow-sm transition hover:bg-white cursor-pointer"
+            aria-label="Open notifications"
+            @click="openNotifications"
           >
-            Logout
+            <i class="pi pi-bell text-sm"></i>
+            <span
+              v-if="hasNewNotification"
+              class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+            ></span>
           </button>
+
+          <button
+            type="button"
+            class="rounded-full border border-black/10 bg-white/70 p-1 shadow-sm transition hover:bg-white cursor-pointer"
+            aria-label="Open user menu"
+            @mouseenter="openUserMenu"
+            @mouseleave="scheduleUserMenuClose"
+            @focusin="openUserMenu"
+            @focusout="scheduleUserMenuClose"
+          >
+            <img src="/avatar.png" alt="User avatar" class="h-9 w-9 rounded-full object-cover" />
+          </button>
+
+          <div
+            class="absolute right-0 top-full mt-2 w-44 rounded-2xl border border-black/10 bg-white p-2 text-sm text-slate-700 shadow-lg transition-opacity duration-150"
+            :class="isUserMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
+            @mouseenter="openUserMenu"
+            @mouseleave="scheduleUserMenuClose"
+            @focusin="openUserMenu"
+            @focusout="scheduleUserMenuClose"
+          >
+            <RouterLink to="/dashboard" class="block rounded-lg px-3 py-2 hover:bg-slate-100">
+              Dashboard
+            </RouterLink>
+            <button
+              type="button"
+              class="w-full rounded-lg px-3 py-2 text-left hover:bg-slate-100"
+              @click="handleLogout"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </div>
     </template>
