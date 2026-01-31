@@ -27,6 +27,14 @@
               {{ subscriptionsError }}
             </Message>
 
+            <Message v-if="notificationError" severity="error" :closable="false">
+              {{ notificationError }}
+            </Message>
+
+            <Message v-if="notificationStatus" severity="success" :closable="false">
+              {{ notificationStatus }}
+            </Message>
+
             <div v-if="authStore.isAuthenticated" class="space-y-3">
               <div class="flex flex-wrap items-center gap-3">
                 <Button
@@ -34,10 +42,18 @@
                   severity="secondary"
                   size="small"
                   :disabled="!canSendNotification"
+                  :loading="notificationSending"
                   @click="handleSendNotification"
                 />
+                <div class="flex items-center gap-2 text-xs text-slate-600">
+                  <Checkbox v-model="sendEmailEnabled" :binary="true" input-id="send-email" />
+                  <label for="send-email">Also email me this notification</label>
+                </div>
                 <p v-if="!canSendNotification" class="text-xs text-slate-500">
-                  Subscribe to at least one suburb to send notifications.
+                  {{ notificationHelperText }}
+                </p>
+                <p v-else-if="sendEmailEnabled" class="text-xs text-slate-500">
+                  {{ emailDailyHelperText }}
                 </p>
               </div>
               <div
@@ -228,6 +244,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Message from 'primevue/message'
 import Password from 'primevue/password'
 import Tabs from 'primevue/tabs'
@@ -258,9 +275,22 @@ const subscriptions = ref([])
 const subscriptionsLoading = ref(true)
 const subscriptionsError = ref('')
 const unsubscribingId = ref(null)
+const notificationError = ref('')
+const notificationStatus = ref('')
+const notificationSending = ref(false)
+const lastNotificationSentAt = ref(0)
+const notificationNow = ref(Date.now())
+const sendEmailEnabled = ref(false)
+const emailNotificationCount = ref(0)
+const emailNotificationDate = ref('')
 let unsubscribeSubscriptions = null
+let notificationIntervalId = null
 const userEmail = computed(() => authStore.user?.email ?? '')
 const NOTIFICATION_LAST_SENT_KEY = 'notifications:lastSent'
+const NOTIFICATION_SEND_COOLDOWN_MS = 60 * 60 * 1000
+const EMAIL_NOTIFICATION_COUNT_KEY = 'notifications:emailCount'
+const EMAIL_NOTIFICATION_DATE_KEY = 'notifications:emailDate'
+const EMAIL_DAILY_LIMIT = 5
 const canUpdatePassword = computed(
   () => authStore.user?.providerData?.some((provider) => provider.providerId === 'password')
 )
@@ -275,8 +305,65 @@ const canSendNotification = computed(
     authStore.isAuthenticated &&
     isDbReady.value &&
     subscriptions.value.length > 0 &&
-    !subscriptionsLoading.value
+    !subscriptionsLoading.value &&
+    !notificationSending.value &&
+    notificationCooldownRemaining.value === 0
 )
+
+const notificationCooldownRemaining = computed(() => {
+  if (!lastNotificationSentAt.value) {
+    return 0
+  }
+  const elapsed = notificationNow.value - lastNotificationSentAt.value
+  if (elapsed >= NOTIFICATION_SEND_COOLDOWN_MS) {
+    return 0
+  }
+  return NOTIFICATION_SEND_COOLDOWN_MS - elapsed
+})
+
+const notificationHelperText = computed(() => {
+  if (notificationSending.value) {
+    return 'Sending notification...'
+  }
+  if (subscriptionsLoading.value) {
+    return 'Loading subscriptions...'
+  }
+  if (!subscriptions.value.length) {
+    return 'Subscribe to at least one suburb to send notifications.'
+  }
+  if (notificationCooldownRemaining.value > 0) {
+    return `You can send another notification in ${formatCooldown(
+      notificationCooldownRemaining.value,
+    )}.`
+  }
+  return ''
+})
+
+const emailDailyRemaining = computed(() =>
+  Math.max(EMAIL_DAILY_LIMIT - emailNotificationCount.value, 0),
+)
+
+const emailDailyResetMs = computed(() => {
+  const today = getTodayKey()
+  if (emailNotificationDate.value !== today) {
+    return 0
+  }
+  const now = new Date(notificationNow.value)
+  const nextMidnight = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+  )
+  return Math.max(nextMidnight.getTime() - notificationNow.value, 0)
+})
+
+const emailDailyHelperText = computed(() => {
+  if (emailDailyRemaining.value === 0) {
+    const resetLabel = emailDailyResetMs.value
+      ? `Resets in ${formatCooldown(emailDailyResetMs.value)}.`
+      : 'Resets soon.'
+    return `Daily email limit reached. ${resetLabel}`
+  }
+  return `${emailDailyRemaining.value} email sends remaining today.`
+})
 
 // Format Firestore timestamps for the enquiries list.
 const formatTimestamp = (value) => {
@@ -288,6 +375,305 @@ const formatTimestamp = (value) => {
     return 'Pending time'
   }
   return date.toLocaleString()
+}
+
+const MAILGUN_DOMAIN = 'breezevalleycafe.com.au'
+const MAILGUN_FROM = `Mailgun Sandbox <postmaster@${MAILGUN_DOMAIN}>`
+const MAILGUN_ENDPOINT = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
+const getMailgunApiKey = () => (import.meta.env.VITE_MAILGUN_API || '').trim()
+const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
+const NOTIFICATION_AIR_CACHE_PREFIX = 'notificationAirQualityCache:v2:'
+const NOTIFICATION_AIR_CACHE_TTL_MS = 60 * 60 * 1000
+
+// Format a cooldown duration for the send notification helper text.
+const formatCooldown = (durationMs) => {
+  const totalMinutes = Math.ceil(durationMs / 60000)
+  if (totalMinutes < 60) {
+    return `${totalMinutes} minute${totalMinutes === 1 ? '' : 's'}`
+  }
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (!minutes) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`
+  }
+  return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'}`
+}
+
+const getTodayKey = () => new Date(notificationNow.value).toISOString().slice(0, 10)
+
+const refreshEmailDailyCount = () => {
+  const todayKey = getTodayKey()
+  const storedDate = localStorage.getItem(EMAIL_NOTIFICATION_DATE_KEY) || ''
+  if (storedDate !== todayKey) {
+    localStorage.setItem(EMAIL_NOTIFICATION_DATE_KEY, todayKey)
+    localStorage.setItem(EMAIL_NOTIFICATION_COUNT_KEY, '0')
+    emailNotificationDate.value = todayKey
+    emailNotificationCount.value = 0
+    return
+  }
+  emailNotificationDate.value = storedDate
+  const storedCount = Number(localStorage.getItem(EMAIL_NOTIFICATION_COUNT_KEY)) || 0
+  emailNotificationCount.value = storedCount
+}
+
+const incrementEmailDailyCount = () => {
+  const nextCount = Math.min(emailNotificationCount.value + 1, EMAIL_DAILY_LIMIT)
+  emailNotificationCount.value = nextCount
+  localStorage.setItem(EMAIL_NOTIFICATION_COUNT_KEY, String(nextCount))
+  localStorage.setItem(EMAIL_NOTIFICATION_DATE_KEY, getTodayKey())
+}
+
+// Read cached air quality payloads with a fixed TTL.
+const readAirQualityCache = (cacheKey) => {
+  const raw = localStorage.getItem(cacheKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (typeof parsed.fetchedAt !== 'number' || !parsed.data) {
+      return null
+    }
+    if (notificationNow.value - parsed.fetchedAt > NOTIFICATION_AIR_CACHE_TTL_MS) {
+      localStorage.removeItem(cacheKey)
+      return null
+    }
+    return parsed.data
+  } catch {
+    localStorage.removeItem(cacheKey)
+    return null
+  }
+}
+
+// Cache air quality payloads for reuse in emails.
+const writeAirQualityCache = (cacheKey, data) => {
+  const payload = JSON.stringify({ fetchedAt: notificationNow.value, data })
+  localStorage.setItem(cacheKey, payload)
+}
+
+// Extract the most recent PM2.5 value from an air quality payload.
+const extractCurrentPm25 = (payload) => {
+  const current = payload?.current?.pm2_5
+  if (Number.isFinite(Number(current))) {
+    return Number(current)
+  }
+  const hourlyValues = Array.isArray(payload?.hourly?.pm2_5) ? payload.hourly.pm2_5 : []
+  for (let index = hourlyValues.length - 1; index >= 0; index -= 1) {
+    const value = Number(hourlyValues[index])
+    if (Number.isFinite(value)) {
+      return value
+    }
+  }
+  return null
+}
+
+// Map PM2.5 values to the same recommendations used in the app UI.
+const getPm25Tier = (value) => {
+  if (!Number.isFinite(value)) {
+    return {
+      label: 'Unavailable',
+      summary: 'No recent PM2.5 data',
+      guidance: 'Check back later for updated readings',
+      emoji: '⚪',
+    }
+  }
+  if (value < 5) {
+    return {
+      label: 'Very Good',
+      summary: 'Clean air',
+      guidance: 'Safe for everyone',
+      emoji: '🟢',
+    }
+  }
+  if (value < 15) {
+    return {
+      label: 'Good',
+      summary: 'Low pollution',
+      guidance: 'Safe for most people',
+      emoji: '🟢',
+    }
+  }
+  if (value < 25) {
+    return {
+      label: 'Moderate',
+      summary: 'Noticeable pollution',
+      guidance: 'Sensitive people may feel effects',
+      emoji: '🟡',
+    }
+  }
+  if (value < 35) {
+    return {
+      label: 'Poor',
+      summary: 'Above safe limit',
+      guidance: 'Reduce outdoor activity',
+      emoji: '🟠',
+    }
+  }
+  if (value < 55) {
+    return {
+      label: 'Very Poor',
+      summary: 'Unhealthy',
+      guidance: 'Health effects likely',
+      emoji: '🔴',
+    }
+  }
+  return {
+    label: 'Hazardous',
+    summary: 'Dangerous',
+    guidance: 'Avoid outdoor activity',
+    emoji: '🛑',
+  }
+}
+
+const getPm25Recommendations = (tierLabel) => {
+  const base = [
+    { emoji: '🚶', text: 'If commuting, choose routes away from main roads' },
+    { emoji: '🪟', text: 'Keep windows closed during heavy traffic' },
+  ]
+  if (tierLabel === 'Very Good') {
+    return [
+      { emoji: '🟢', text: 'Air quality is clear' },
+      { emoji: '🌿', text: 'Enjoy outdoor activities' },
+      ...base,
+    ]
+  }
+  if (tierLabel === 'Good') {
+    return [
+      { emoji: '🟢', text: 'Air quality is generally safe' },
+      { emoji: '🏃', text: 'Outdoor activity is fine for most people' },
+      ...base,
+    ]
+  }
+  if (tierLabel === 'Moderate') {
+    return [
+      { emoji: '🟡', text: 'Air quality is noticeable at times' },
+      { emoji: '😷', text: 'Sensitive people may feel effects outdoors' },
+      { emoji: '🏃', text: 'Limit extended outdoor exercise if you feel symptoms' },
+      ...base,
+    ]
+  }
+  if (tierLabel === 'Poor') {
+    return [
+      { emoji: '🟠', text: 'Air quality is above safe limits' },
+      { emoji: '🏃', text: 'Reduce outdoor activity' },
+      { emoji: '🏠', text: 'Keep strenuous exercise indoors' },
+      ...base,
+    ]
+  }
+  if (tierLabel === 'Very Poor') {
+    return [
+      { emoji: '🔴', text: 'Air quality is unhealthy' },
+      { emoji: '🏠', text: 'Stay indoors if possible' },
+      { emoji: '😷', text: 'Wear a mask outdoors' },
+      ...base,
+    ]
+  }
+  if (tierLabel === 'Hazardous') {
+    return [
+      { emoji: '🛑', text: 'Air quality is hazardous' },
+      { emoji: '🏠', text: 'Avoid outdoor activity' },
+      { emoji: '😷', text: 'Use air purifiers indoors' },
+      ...base,
+    ]
+  }
+  return [
+    { emoji: '⚪', text: 'Air quality data is currently unavailable' },
+    ...base,
+  ]
+}
+
+// Fetch air quality data for a subscription with caching.
+const fetchAirQualityForSubscription = async (subscription) => {
+  const suburbName = subscription.lgaName || 'Unknown suburb'
+  const state = subscription.state || ''
+  const cacheKey = `${NOTIFICATION_AIR_CACHE_PREFIX}${suburbName}|${state}`
+  const cached = readAirQualityCache(cacheKey)
+  if (cached) {
+    return { suburbName, state, payload: cached }
+  }
+
+  const baseUrl = getAirQualityUrl()
+  if (!baseUrl) {
+    throw new Error('Missing Firebase Functions base URL configuration.')
+  }
+
+  const airUrl = new URL(baseUrl)
+  airUrl.searchParams.set('suburb', suburbName)
+  airUrl.searchParams.set('state', state)
+  airUrl.searchParams.set('current', 'pm2_5')
+  airUrl.searchParams.set('hourly', 'pm2_5')
+  airUrl.searchParams.set('past_days', '92')
+  airUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(airUrl)
+  if (!response.ok) {
+    throw new Error(`Unable to load air quality for ${suburbName}.`)
+  }
+  const payload = await response.json()
+  const data = payload.data || payload
+  writeAirQualityCache(cacheKey, data)
+  return { suburbName, state, payload: data }
+}
+
+// Build the notification message used for both in-app and email.
+const buildNotificationMessage = async () => {
+  if (!subscriptions.value.length) {
+    return 'Your subscribed cities are not available yet.'
+  }
+
+  const entries = await Promise.all(
+    subscriptions.value.map(async (subscription) => {
+      try {
+        const result = await fetchAirQualityForSubscription(subscription)
+        const currentValue = extractCurrentPm25(result.payload)
+        const tier = getPm25Tier(currentValue)
+        const recommendations = getPm25Recommendations(tier.label)
+        return {
+          suburbName: result.suburbName,
+          currentValue,
+          unit: 'ug/m3',
+          tier,
+          recommendations,
+        }
+      } catch (error) {
+        return {
+          suburbName: subscription.lgaName || 'Unknown suburb',
+          currentValue: null,
+          unit: 'ug/m3',
+          tier: getPm25Tier(null),
+          recommendations: getPm25Recommendations('Unavailable'),
+          error,
+        }
+      }
+    }),
+  )
+
+  return entries
+    .map((entry) => {
+      const currentLabel = Number.isFinite(entry.currentValue)
+        ? entry.currentValue.toFixed(2)
+        : 'N/A'
+      const lines = [
+        `${entry.suburbName}, PM2.5: ${currentLabel} ${entry.unit}`,
+        `Today in ${entry.suburbName}`,
+        '',
+        entry.tier.emoji,
+        `PM2.5 is ${entry.tier.label} right now`,
+        '📍',
+        entry.tier.summary,
+        '✅',
+        entry.tier.guidance,
+      ]
+      entry.recommendations.forEach((recommendation) => {
+        lines.push(recommendation.emoji)
+        lines.push(recommendation.text)
+      })
+      return lines.join('\n')
+    })
+    .join('\n\n')
 }
 
 // Listen for enquiry updates in Firestore.
@@ -377,9 +763,73 @@ const handleUnsubscribe = async (subscriptionId) => {
   }
 }
 
-const handleSendNotification = () => {
-  localStorage.setItem(NOTIFICATION_LAST_SENT_KEY, String(Date.now()))
-  window.dispatchEvent(new CustomEvent('notifications:sent'))
+// Send the daily notification and optionally email it through Mailgun.
+const handleSendNotification = async () => {
+  if (!authStore.user) {
+    notificationError.value = 'Please sign in to send notifications.'
+    return
+  }
+
+  notificationError.value = ''
+  notificationStatus.value = ''
+  notificationSending.value = true
+
+  try {
+    const message = await buildNotificationMessage()
+    const shouldSendEmail = sendEmailEnabled.value
+    let emailSent = false
+
+    if (shouldSendEmail) {
+      refreshEmailDailyCount()
+      if (emailDailyRemaining.value === 0) {
+        notificationError.value = 'Daily email limit reached. Sent in-app only.'
+      } else {
+        const mailgunApiKey = getMailgunApiKey()
+        if (!mailgunApiKey) {
+          throw new Error('Missing Mailgun API key configuration.')
+        }
+        if (!userEmail.value) {
+          throw new Error('No email is associated with this account.')
+        }
+        const auth = btoa(`api:${mailgunApiKey}`)
+        const payload = new URLSearchParams()
+        payload.set('from', MAILGUN_FROM)
+        payload.set('to', userEmail.value)
+        payload.set('subject', '[Airscape Notification] Your subscribed cities')
+        payload.set('text', message)
+        const response = await fetch(MAILGUN_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: payload,
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '')
+          throw new Error(errorText || 'Unable to send notification email.')
+        }
+        incrementEmailDailyCount()
+        emailSent = true
+      }
+    }
+
+    const now = Date.now()
+    localStorage.setItem(NOTIFICATION_LAST_SENT_KEY, String(now))
+    lastNotificationSentAt.value = now
+    notificationNow.value = now
+    if (shouldSendEmail && emailSent) {
+      notificationStatus.value = `${message} Email sent.`
+    } else {
+      notificationStatus.value = message
+    }
+    window.dispatchEvent(new CustomEvent('notifications:sent'))
+  } catch (err) {
+    notificationError.value = err?.message ?? 'Unable to send notification email.'
+  } finally {
+    notificationSending.value = false
+  }
 }
 
 // Update the current user's password after basic client-side validation.
@@ -446,6 +896,13 @@ const handlePasswordUpdate = async () => {
 onMounted(() => {
   setupEnquiriesListener()
   setupSubscriptionListener()
+  lastNotificationSentAt.value = Number(localStorage.getItem(NOTIFICATION_LAST_SENT_KEY)) || 0
+  notificationNow.value = Date.now()
+  refreshEmailDailyCount()
+  notificationIntervalId = setInterval(() => {
+    notificationNow.value = Date.now()
+    refreshEmailDailyCount()
+  }, 60000)
 })
 
 onBeforeUnmount(() => {
@@ -454,6 +911,10 @@ onBeforeUnmount(() => {
   }
   if (unsubscribeSubscriptions) {
     unsubscribeSubscriptions()
+  }
+  if (notificationIntervalId) {
+    clearInterval(notificationIntervalId)
+    notificationIntervalId = null
   }
 })
 
