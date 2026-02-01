@@ -261,16 +261,28 @@ const pm25Recommendations = computed(() => {
 })
 
 // Derive safe min/max bounds for the PM2.5 gauge when trend data is sparse.
-const getPm25GaugeBounds = (stats) => {
+// Include the current reading so the gauge always reflects live values.
+const getPm25GaugeBounds = (stats, currentValue) => {
   const min = Number(stats?.minimum)
   const max = Number(stats?.maximum)
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+  const current = Number(currentValue)
+  const hasStats = Number.isFinite(min) && Number.isFinite(max)
+  const hasCurrent = Number.isFinite(current)
+
+  if (!hasStats && !hasCurrent) {
     return { min: 0, max: 1 }
   }
-  if (max <= min) {
-    return { min, max: min + 1 }
+
+  const resolvedMin = hasStats ? min : current
+  const resolvedMax = hasStats ? max : current
+  const boundedMin = hasCurrent ? Math.min(resolvedMin, current) : resolvedMin
+  const boundedMax = hasCurrent ? Math.max(resolvedMax, current) : resolvedMax
+
+  if (boundedMax <= boundedMin) {
+    return { min: boundedMin, max: boundedMin + 1 }
   }
-  return { min, max }
+
+  return { min: boundedMin, max: boundedMax }
 }
 
 // Build the Highcharts gauge config for the PM2.5 recommendation card.
@@ -338,15 +350,12 @@ const buildPm25GaugeOptions = ({ min, max, current, unit, color }) => ({
 })
 
 const pm25GaugePayload = computed(() => {
-  const bounds = getPm25GaugeBounds(pm25TrendStats.value)
+  const bounds = getPm25GaugeBounds(pm25TrendStats.value, pm25CurrentValue.value)
   const currentValue = pm25CurrentValue.value
-  const clampedValue = Number.isFinite(currentValue)
-    ? Math.min(Math.max(currentValue, bounds.min), bounds.max)
-    : bounds.min
   return {
     min: bounds.min,
     max: bounds.max,
-    current: clampedValue,
+    current: Number.isFinite(currentValue) ? currentValue : bounds.min,
     unit: props.unit,
     color: getPm25TierColor(pm25Tier.value.label),
   }
