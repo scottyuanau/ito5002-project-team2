@@ -15,10 +15,13 @@
         <RouterLink to="/contact" class="transition hover:text-slate-900">Contact</RouterLink>
       </nav>
     </footer>
+
+    <CookieConsentBanner />
   </div>
 </template>
 
 <script setup>
 import { RouterView } from 'vue-router'
+import CookieConsentBanner from './components/CookieConsentBanner.vue'
 import NavigationBar from './components/NavigationBar.vue'
 </script>
