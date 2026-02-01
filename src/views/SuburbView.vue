@@ -485,9 +485,6 @@ const formatFetchedAt = (timestamp) => {
 const buildStaleNotice = (timestamp) =>
   `Data provider limit reached. Showing last saved data from ${formatFetchedAt(timestamp)}.`
 
-const buildSimulatedNotice = () =>
-  'Data provider limit reached. Showing simulated data for now.'
-
 // Pull a readable error message from failed API responses.
 const getApiErrorMessage = async (response, fallbackMessage) => {
   let message = fallbackMessage
@@ -511,80 +508,6 @@ const getApiErrorMessage = async (response, fallbackMessage) => {
     message = 'The data provider quota has been exceeded. Please try again later.'
   }
   return message
-}
-
-const isQuotaMessage = (message, status) =>
-  status === 429 || (typeof message === 'string' && /quota/i.test(message))
-
-// Build a simulated air quality payload for summary and trend views.
-const buildSyntheticAirQualityPayload = (seedKey, days = 7) => {
-  const random = seededRandom(hashSeed(normalizeSeedValue(seedKey)))
-  const hours = Math.max(24, days * 24)
-  const now = new Date()
-  const start = new Date(now.getTime() - (hours - 1) * 60 * 60 * 1000)
-  const time = []
-  const hourly = {}
-  const hourlyUnits = {}
-  const current = {}
-  const currentUnits = {}
-
-  const metricConfigs = {
-    pm2_5: { base: 10, variance: 15 },
-    pm10: { base: 18, variance: 22 },
-    carbon_monoxide: { base: 300, variance: 250 },
-    nitrogen_dioxide: { base: 20, variance: 15 },
-    sulphur_dioxide: { base: 5, variance: 6 },
-    ozone: { base: 30, variance: 20 },
-  }
-
-  Object.keys(metricConfigs).forEach((key) => {
-    hourly[key] = []
-    hourlyUnits[key] = 'ug/m3'
-    currentUnits[key] = 'ug/m3'
-  })
-
-  for (let index = 0; index < hours; index += 1) {
-    const timestamp = new Date(start.getTime() + index * 60 * 60 * 1000)
-    time.push(timestamp.toISOString().slice(0, 16))
-
-    Object.entries(metricConfigs).forEach(([key, { base, variance }]) => {
-      const dailyWave = Math.sin((index / 24) * Math.PI * 2) * (variance * 0.2)
-      const jitter = (random() - 0.5) * variance
-      const value = Math.max(1, Number((base + dailyWave + jitter).toFixed(2)))
-      hourly[key].push(value)
-    })
-  }
-
-  Object.keys(metricConfigs).forEach((key) => {
-    const series = hourly[key]
-    current[key] = series[series.length - 1] ?? null
-  })
-
-  return {
-    current,
-    current_units: currentUnits,
-    hourly: { time, ...hourly },
-    hourly_units: hourlyUnits,
-  }
-}
-
-// Build simulated heatmap points with metrics for map rendering.
-const buildSyntheticHeatmapPoints = (center, seedKey) => {
-  const points = buildHeatmapPoints(center, seedKey)
-  return points.map((point, index) => {
-    const random = seededRandom(hashSeed(`${seedKey}-${index}`))
-    return {
-      ...point,
-      metrics: {
-        pm2_5: Number((5 + random() * 40).toFixed(2)),
-        pm10: Number((10 + random() * 60).toFixed(2)),
-        carbon_monoxide: Number((200 + random() * 600).toFixed(2)),
-        nitrogen_dioxide: Number((10 + random() * 40).toFixed(2)),
-        sulphur_dioxide: Number((2 + random() * 10).toFixed(2)),
-        ozone: Number((10 + random() * 50).toFixed(2)),
-      },
-    }
-  })
 }
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
@@ -1276,11 +1199,6 @@ const loadHeatmapData = async () => {
             response,
             'Failed to fetch heatmap air quality data.',
           )
-          if (isQuotaMessage(message, response.status)) {
-            const quotaError = new Error(message)
-            quotaError.isQuota = true
-            throw quotaError
-          }
           throw new Error(message)
         }
         const payload = await response.json()
@@ -1304,13 +1222,6 @@ const loadHeatmapData = async () => {
       heatmapPoints.value = staleCache.data.points
       heatmapLoaded.value = true
       heatmapNotice.value = buildStaleNotice(staleCache.fetchedAt)
-      applyHeatmapUpdates()
-      fitHeatmapBounds()
-    } else if (error?.isQuota) {
-      const seedKey = `${suburbQuery}|${state.toUpperCase()}`
-      heatmapPoints.value = buildSyntheticHeatmapPoints(lgaCoordinates.value, seedKey)
-      heatmapLoaded.value = true
-      heatmapNotice.value = buildSimulatedNotice()
       applyHeatmapUpdates()
       fitHeatmapBounds()
     } else {
@@ -1390,14 +1301,6 @@ const loadAirQuality = async () => {
     const airResponse = await fetch(airUrl)
     if (!airResponse.ok) {
       const message = await getApiErrorMessage(airResponse, 'Failed to fetch air quality data.')
-      if (isQuotaMessage(message, airResponse.status)) {
-        const dateStamp = new Date().toDateString()
-        const seedKey = `${suburbQuery}|${state.toUpperCase()}|${dateStamp}`
-        const syntheticPayload = buildSyntheticAirQualityPayload(seedKey)
-        airQualityRows.value = buildAirQualityRows(syntheticPayload)
-        airQualityNotice.value = buildSimulatedNotice()
-        return
-      }
       throw new Error(message)
     }
 
@@ -1466,15 +1369,6 @@ const loadAirQualityTrend = async () => {
         airResponse,
         'Failed to fetch air quality trend data.',
       )
-      if (isQuotaMessage(message, airResponse.status)) {
-        const dateStamp = new Date().toDateString()
-        const seedKey = `${suburbQuery}|${state.toUpperCase()}|${dateStamp}`
-        const syntheticPayload = buildSyntheticAirQualityPayload(seedKey)
-        trendSeries.value = buildTrendSeries(syntheticPayload)
-        trendLoaded.value = true
-        trendNotice.value = buildSimulatedNotice()
-        return
-      }
       throw new Error(message)
     }
 

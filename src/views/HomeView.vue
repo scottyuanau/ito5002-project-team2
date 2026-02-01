@@ -251,7 +251,12 @@ const todaysTip = computed(() => airTips[dailyTipIndex.value])
 
 // Read a cached payload when it is still within the TTL window.
 const readCacheWithTtl = (cacheKey, ttlMs) => {
-  const raw = localStorage.getItem(cacheKey)
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
   if (!raw) {
     return null
   }
@@ -275,7 +280,12 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
 
 // Read cached entries without enforcing a TTL (used for stale fallback messaging).
 const readCacheEntry = (cacheKey) => {
-  const raw = localStorage.getItem(cacheKey)
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
   if (!raw) {
     return null
   }
@@ -296,7 +306,11 @@ const readCacheEntry = (cacheKey) => {
 // Persist a payload with a timestamp so we can expire it later.
 const writeCache = (cacheKey, data) => {
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
-  localStorage.setItem(cacheKey, payload)
+  try {
+    localStorage.setItem(cacheKey, payload)
+  } catch {
+    // Some browsers (Safari private mode) throw QuotaExceededError; skip caching.
+  }
 }
 
 // Wrap the Geolocation API in a promise for async/await usage.
@@ -381,35 +395,6 @@ const buildDailyPm25Series = (payload) => {
   return { values: dailyValues, unit: hourlyUnits.pm2_5 || 'ug/m3' }
 }
 
-// Normalize a string for deterministic seed generation.
-const normalizeSeedValue = (value) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-
-// Hash a seed string into a stable 32-bit number.
-const hashSeed = (value) => {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
-
-// Generate deterministic random numbers from a seed.
-const seededRandom = (seed) => {
-  let value = seed >>> 0
-  return () => {
-    value |= 0
-    value = (value + 0x6d2b79f5) | 0
-    let t = Math.imul(value ^ (value >>> 15), 1 | value)
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
 // Pull the latest PM2.5 value from current or hourly data.
 const extractCurrentPm25 = (payload) => {
   const current = payload?.current?.pm2_5
@@ -443,9 +428,6 @@ const formatFetchedAt = (timestamp) => {
 const buildStaleNotice = (timestamp) =>
   `Data provider limit reached. Showing last saved data from ${formatFetchedAt(timestamp)}.`
 
-const buildSimulatedNotice = () =>
-  'Data provider limit reached. Showing simulated data for now.'
-
 // Pull a readable error message from failed API responses.
 const getApiErrorMessage = async (response, fallbackMessage) => {
   let message = fallbackMessage
@@ -469,39 +451,6 @@ const getApiErrorMessage = async (response, fallbackMessage) => {
     message = 'The data provider quota has been exceeded. Please try again later.'
   }
   return message
-}
-
-const isQuotaMessage = (message, status) =>
-  status === 429 || (typeof message === 'string' && /quota/i.test(message))
-
-// Build a simulated PM2.5 payload when live data is unavailable.
-const buildSyntheticPm25Payload = (seedKey, days = 7) => {
-  const random = seededRandom(hashSeed(normalizeSeedValue(seedKey)))
-  const hours = Math.max(24, days * 24)
-  const now = new Date()
-  const start = new Date(now.getTime() - (hours - 1) * 60 * 60 * 1000)
-  const time = []
-  const pm2_5 = []
-  const base = 8 + random() * 12
-  const variance = 10 + random() * 8
-
-  for (let index = 0; index < hours; index += 1) {
-    const timestamp = new Date(start.getTime() + index * 60 * 60 * 1000)
-    time.push(timestamp.toISOString().slice(0, 16))
-    const dailyWave = Math.sin((index / 24) * Math.PI * 2) * 3
-    const jitter = (random() - 0.5) * variance
-    const value = Math.max(1, Number((base + dailyWave + jitter).toFixed(2)))
-    pm2_5.push(value)
-  }
-
-  const currentValue = pm2_5[pm2_5.length - 1] ?? null
-
-  return {
-    current: { pm2_5: currentValue },
-    current_units: { pm2_5: 'ug/m3' },
-    hourly: { time, pm2_5 },
-    hourly_units: { pm2_5: 'ug/m3' },
-  }
 }
 
 const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
@@ -534,13 +483,6 @@ const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
     if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
       applyAirQualityPayload(staleCache.data)
       airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
-      return
-    }
-    if (isQuotaMessage(message, response.status)) {
-      const seedKey = `${lat}|${lon}|${new Date().toDateString()}`
-      const syntheticPayload = buildSyntheticPm25Payload(seedKey)
-      applyAirQualityPayload(syntheticPayload)
-      airQualityNotice.value = buildSimulatedNotice()
       return
     }
     throw new Error(message)
@@ -581,13 +523,6 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
     if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
       applyAirQualityPayload(staleCache.data)
       airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
-      return
-    }
-    if (isQuotaMessage(message, response.status)) {
-      const seedKey = `${suburbName}|${state}|${new Date().toDateString()}`
-      const syntheticPayload = buildSyntheticPm25Payload(seedKey)
-      applyAirQualityPayload(syntheticPayload)
-      airQualityNotice.value = buildSimulatedNotice()
       return
     }
     throw new Error(message)
