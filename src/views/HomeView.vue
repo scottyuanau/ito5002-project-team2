@@ -50,6 +50,34 @@
         :trend-values="pm25TrendValues"
         :unit="pm25Unit"
       />
+      <div
+        v-if="!locationError && !airQualityError"
+        class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+      >
+        <div>
+          <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
+          <p class="text-xs text-slate-500">Last 12 hours and forecast for next 12 hours.</p>
+        </div>
+        <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
+        <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
+          Loading hourly PM2.5 data...
+        </p>
+        <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">{{ pm25HourlyNotice }}</p>
+        <p
+          v-if="!pm25HourlyLoading && !pm25HourlyError && !pm25HourlyChartData.labels.length"
+          class="text-sm text-slate-500"
+        >
+          No hourly PM2.5 data available right now.
+        </p>
+        <div v-else class="h-72 w-full">
+          <Chart
+            type="line"
+            :data="pm25HourlyChartData"
+            :options="pm25HourlyChartOptions"
+            class="h-full w-full"
+          />
+        </div>
+      </div>
     </section>
 
     <!-- Daily air-friendly habit card -->
@@ -140,6 +168,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Carousel from 'primevue/carousel'
+import Chart from 'primevue/chart'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
 import Pm25RecommendationsPanel from '../components/Pm25RecommendationsPanel.vue'
@@ -169,11 +198,16 @@ const airQualityNotice = ref('')
 const pm25CurrentValue = ref(null)
 const pm25TrendValues = ref([])
 const pm25Unit = ref('ug/m3')
+const pm25HourlyLoading = ref(false)
+const pm25HourlyError = ref('')
+const pm25HourlyNotice = ref('')
+const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
 
 const HOME_CACHE_TTL_MS = 60 * 60 * 1000
 const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
 const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
+const HOME_PM25_HOURLY_CACHE_PREFIX = 'homePm25HourlyCache:v1:'
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 
@@ -395,6 +429,65 @@ const buildDailyPm25Series = (payload) => {
   return { values: dailyValues, unit: hourlyUnits.pm2_5 || 'ug/m3' }
 }
 
+// Build a PM2.5 series split into last 12 historical hours and next 12 forecast hours.
+const buildPm25HourlySeries = (payload) => {
+  const fallback = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+  const hourly = payload?.hourly || {}
+  const hourlyUnits = payload?.hourly_units || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  const values = Array.isArray(hourly.pm2_5) ? hourly.pm2_5 : []
+  if (!timeList.length || !values.length) {
+    return fallback
+  }
+
+  const entries = []
+  timeList.forEach((timeValue, index) => {
+    const parsed = new Date(timeValue)
+    if (Number.isNaN(parsed.getTime())) {
+      return
+    }
+    const numericValue = Number(values[index])
+    entries.push({
+      timeValue,
+      timestamp: parsed.getTime(),
+      value: Number.isFinite(numericValue) ? Number(numericValue.toFixed(2)) : null,
+    })
+  })
+
+  if (!entries.length) {
+    return fallback
+  }
+
+  const now = Date.now()
+  let anchorPosition = 0
+  let minDistance = Number.POSITIVE_INFINITY
+  entries.forEach((entry, entryIndex) => {
+    const distance = Math.abs(entry.timestamp - now)
+    if (distance < minDistance) {
+      minDistance = distance
+      anchorPosition = entryIndex
+    }
+  })
+
+  const historicalEntries = entries.slice(Math.max(0, anchorPosition - 11), anchorPosition + 1)
+  const forecastEntries = entries.slice(anchorPosition + 1, anchorPosition + 13)
+  const combinedEntries = [...historicalEntries, ...forecastEntries]
+  const labels = combinedEntries.map((entry) =>
+    new Date(entry.timeValue).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  )
+
+  return {
+    labels,
+    historical: combinedEntries.map((entry, index) =>
+      index < historicalEntries.length ? entry.value : null,
+    ),
+    forecast: combinedEntries.map((entry, index) =>
+      index >= historicalEntries.length ? entry.value : null,
+    ),
+    unit: hourlyUnits.pm2_5 || 'ug/m3',
+  }
+}
+
 // Pull the latest PM2.5 value from current or hourly data.
 const extractCurrentPm25 = (payload) => {
   const current = payload?.current?.pm2_5
@@ -417,6 +510,69 @@ const applyAirQualityPayload = (payload) => {
   pm25Unit.value = unit || 'ug/m3'
   pm25CurrentValue.value = extractCurrentPm25(payload)
 }
+
+const pm25HourlyChartData = computed(() => ({
+  labels: pm25HourlySeries.value.labels,
+  datasets: [
+    {
+      label: `Historical PM2.5 (${pm25HourlySeries.value.unit})`,
+      data: pm25HourlySeries.value.historical,
+      fill: false,
+      tension: 0.25,
+      borderColor: '#0f766e',
+      backgroundColor: '#0f766e',
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      spanGaps: false,
+    },
+    {
+      label: `Forecast PM2.5 (${pm25HourlySeries.value.unit})`,
+      data: pm25HourlySeries.value.forecast,
+      fill: false,
+      tension: 0.25,
+      borderColor: '#f97316',
+      backgroundColor: '#f97316',
+      borderDash: [6, 4],
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      spanGaps: false,
+    },
+  ],
+}))
+
+const pm25HourlyChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      labels: {
+        color: '#334155',
+      },
+    },
+  },
+  scales: {
+    x: {
+      ticks: {
+        color: '#64748b',
+        maxTicksLimit: 12,
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+    y: {
+      ticks: {
+        color: '#64748b',
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+  },
+}))
 
 const formatFetchedAt = (timestamp) => {
   if (!timestamp) {
@@ -493,6 +649,51 @@ const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
   applyAirQualityPayload(data)
 }
 
+const loadPm25HourlyByCoords = async ({ lat, lon, cacheKey }) => {
+  pm25HourlyError.value = ''
+  pm25HourlyNotice.value = ''
+
+  const cachedHourly = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
+  if (cachedHourly) {
+    pm25HourlySeries.value = cachedHourly
+    return
+  }
+  const staleCache = readCacheEntry(cacheKey)
+
+  pm25HourlyLoading.value = true
+  try {
+    const hourlyUrl = new URL('https://air-quality-api.open-meteo.com/v1/air-quality')
+    hourlyUrl.searchParams.set('latitude', lat.toString())
+    hourlyUrl.searchParams.set('longitude', lon.toString())
+    hourlyUrl.searchParams.set('hourly', 'pm2_5')
+    hourlyUrl.searchParams.set('past_days', '1')
+    hourlyUrl.searchParams.set('forecast_days', '1')
+    hourlyUrl.searchParams.set('timezone', 'auto')
+
+    const response = await fetch(hourlyUrl)
+    if (!response.ok) {
+      const message = await getApiErrorMessage(response, 'Failed to fetch hourly PM2.5 data.')
+      throw new Error(message)
+    }
+
+    const payload = await response.json()
+    const data = payload.data || payload
+    const series = buildPm25HourlySeries(data)
+    pm25HourlySeries.value = series
+    writeCache(cacheKey, series)
+  } catch (error) {
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
+      pm25HourlySeries.value = staleCache.data
+      pm25HourlyNotice.value = buildStaleNotice(staleCache.fetchedAt)
+    } else {
+      pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+      pm25HourlyError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    }
+  } finally {
+    pm25HourlyLoading.value = false
+  }
+}
+
 const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
   const cachedAirQuality = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
   if (cachedAirQuality) {
@@ -543,14 +744,21 @@ const loadLocalAirQuality = async () => {
   let position
   try {
     position = await getCurrentPosition()
-  } catch (error) {
+  } catch {
     locationLabel.value = 'Sydney'
     locationLoading.value = false
     try {
+      const fallbackLat = -33.869
+      const fallbackLon = 151.209
       await loadAirQualityBySuburb({
         suburbName: 'Sydney',
         state: 'NSW',
         cacheKey: `${HOME_AIR_CACHE_PREFIX}sydney|NSW`,
+      })
+      await loadPm25HourlyByCoords({
+        lat: fallbackLat,
+        lon: fallbackLon,
+        cacheKey: `${HOME_PM25_HOURLY_CACHE_PREFIX}${fallbackLat}|${fallbackLon}`,
       })
     } catch (fallbackError) {
       airQualityError.value =
@@ -569,6 +777,7 @@ const loadLocalAirQuality = async () => {
   const lon = Number(position.coords.longitude.toFixed(3))
   const locationCacheKey = `${HOME_LOCATION_CACHE_PREFIX}${lat}|${lon}`
   const airCacheKey = `${HOME_AIR_CACHE_PREFIX}${lat}|${lon}`
+  const hourlyCacheKey = `${HOME_PM25_HOURLY_CACHE_PREFIX}${lat}|${lon}`
 
   const cachedLocation = readCacheWithTtl(locationCacheKey, HOME_CACHE_TTL_MS)
   if (cachedLocation?.label) {
@@ -595,6 +804,7 @@ const loadLocalAirQuality = async () => {
 
   try {
     await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
+    await loadPm25HourlyByCoords({ lat, lon, cacheKey: hourlyCacheKey })
   } catch (error) {
     airQualityError.value =
       error instanceof Error ? error.message : 'Unable to load local air quality.'
