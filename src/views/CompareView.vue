@@ -1,5 +1,5 @@
 <template>
-  <section class="w-full max-w-6xl self-start space-y-8 text-left py-6">
+  <section class="w-full max-w-6xl self-start space-y-8 py-6 text-left">
     <header class="space-y-2">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Compare</p>
       <h1 class="text-3xl font-semibold text-slate-900">Compare suburb metrics</h1>
@@ -53,117 +53,183 @@
       <p class="text-sm text-slate-600">Add at least 2 suburbs to compare.</p>
     </div>
 
-    <div v-else class="space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-base font-semibold text-slate-800">Air quality comparison</h2>
-        <p v-if="loading" class="text-sm text-slate-500">Loading latest metrics...</p>
-      </div>
+    <Tabs v-else v-model:value="activeTab" class="w-full">
+      <TabList>
+        <Tab value="current">Current</Tab>
+        <Tab value="historical">Historical</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="current">
+          <div class="space-y-4 pt-4">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-semibold text-slate-800">Air quality comparison</h2>
+              <p v-if="loading" class="text-sm text-slate-500">Loading latest metrics...</p>
+            </div>
 
-      <div v-if="comparisonErrors.length" class="space-y-1">
-        <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
-        <ul class="list-disc pl-5 text-sm text-red-600">
-          <li v-for="error in comparisonErrors" :key="error.key">{{ error.label }}</li>
-        </ul>
-      </div>
+            <div v-if="comparisonErrors.length" class="space-y-1">
+              <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
+              <ul class="list-disc pl-5 text-sm text-red-600">
+                <li v-for="error in comparisonErrors" :key="error.key">{{ error.label }}</li>
+              </ul>
+            </div>
 
-      <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-        <table class="min-w-full text-sm">
-          <thead class="border-b border-slate-200 bg-slate-50 text-left">
-            <tr v-if="loading">
-              <th v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
-                <Skeleton height="1.1rem" width="80%" />
-              </th>
-            </tr>
-            <tr v-else>
-              <th class="px-4 py-3 font-semibold text-slate-600">Metric</th>
-              <th class="px-4 py-3 font-semibold text-slate-600">Unit</th>
-              <th
-                v-for="suburb in compareSuburbs"
-                :key="suburb.key"
-                class="px-4 py-3 font-semibold text-slate-700"
-              >
-                {{ suburb.label }}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in loading ? pollutants : comparisonRows"
-              :key="row.key || row.metric"
-              class="border-b border-slate-200 last:border-b-0"
-            >
-              <template v-if="loading">
-                <td v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
-                  <Skeleton height="1.1rem" width="100%" />
-                </td>
-              </template>
-              <template v-else>
-                <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
-                <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
-                <td v-for="value in row.values" :key="value.key" class="px-4 py-3 text-slate-700">
-                  {{ value.value }}
-                </td>
-              </template>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+            <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table class="min-w-full text-sm">
+                <thead class="border-b border-slate-200 bg-slate-50 text-left">
+                  <tr v-if="loading">
+                    <th v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                      <Skeleton height="1.1rem" width="80%" />
+                    </th>
+                  </tr>
+                  <tr v-else>
+                    <th class="px-4 py-3 font-semibold text-slate-600">Metric</th>
+                    <th class="px-4 py-3 font-semibold text-slate-600">Unit</th>
+                    <th
+                      v-for="suburb in compareSuburbs"
+                      :key="suburb.key"
+                      class="px-4 py-3 font-semibold text-slate-700"
+                    >
+                      {{ suburb.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in loading ? pollutants : comparisonRows"
+                    :key="row.key || row.metric"
+                    class="border-b border-slate-200 last:border-b-0"
+                  >
+                    <template v-if="loading">
+                      <td v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                        <Skeleton height="1.1rem" width="100%" />
+                      </td>
+                    </template>
+                    <template v-else>
+                      <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
+                      <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
+                      <td
+                        v-for="value in row.values"
+                        :key="value.key"
+                        class="px-4 py-3 text-slate-700"
+                      >
+                        {{ value.value }}
+                      </td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-      <div class="flex items-center justify-between pt-4">
-        <h2 class="text-base font-semibold text-slate-800">Green space comparison</h2>
-        <p v-if="greenLoading" class="text-sm text-slate-500">Loading latest metrics...</p>
-      </div>
+            <div class="flex items-center justify-between pt-4">
+              <h2 class="text-base font-semibold text-slate-800">Green space comparison</h2>
+              <p v-if="greenLoading" class="text-sm text-slate-500">Loading latest metrics...</p>
+            </div>
 
-      <div v-if="greenComparisonErrors.length" class="space-y-1">
-        <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
-        <ul class="list-disc pl-5 text-sm text-red-600">
-          <li v-for="error in greenComparisonErrors" :key="error.key">{{ error.label }}</li>
-        </ul>
-      </div>
+            <div v-if="greenComparisonErrors.length" class="space-y-1">
+              <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
+              <ul class="list-disc pl-5 text-sm text-red-600">
+                <li v-for="error in greenComparisonErrors" :key="error.key">{{ error.label }}</li>
+              </ul>
+            </div>
 
-      <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-        <table class="min-w-full text-sm">
-          <thead class="border-b border-slate-200 bg-slate-50 text-left">
-            <tr v-if="greenLoading">
-              <th v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
-                <Skeleton height="1.1rem" width="80%" />
-              </th>
-            </tr>
-            <tr v-else>
-              <th class="px-4 py-3 font-semibold text-slate-600">Metric</th>
-              <th class="px-4 py-3 font-semibold text-slate-600">Unit</th>
-              <th
-                v-for="suburb in compareSuburbs"
-                :key="suburb.key"
-                class="px-4 py-3 font-semibold text-slate-700"
-              >
-                {{ suburb.label }}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in greenLoading ? greenMetrics : greenComparisonRows"
-              :key="row.key || row.metric"
-              class="border-b border-slate-200 last:border-b-0"
-            >
-              <template v-if="greenLoading">
-                <td v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
-                  <Skeleton height="1.1rem" width="100%" />
-                </td>
-              </template>
-              <template v-else>
-                <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
-                <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
-                <td v-for="value in row.values" :key="value.key" class="px-4 py-3 text-slate-700">
-                  {{ value.value }}
-                </td>
-              </template>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+            <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table class="min-w-full text-sm">
+                <thead class="border-b border-slate-200 bg-slate-50 text-left">
+                  <tr v-if="greenLoading">
+                    <th v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                      <Skeleton height="1.1rem" width="80%" />
+                    </th>
+                  </tr>
+                  <tr v-else>
+                    <th class="px-4 py-3 font-semibold text-slate-600">Metric</th>
+                    <th class="px-4 py-3 font-semibold text-slate-600">Unit</th>
+                    <th
+                      v-for="suburb in compareSuburbs"
+                      :key="suburb.key"
+                      class="px-4 py-3 font-semibold text-slate-700"
+                    >
+                      {{ suburb.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in greenLoading ? greenMetrics : greenComparisonRows"
+                    :key="row.key || row.metric"
+                    class="border-b border-slate-200 last:border-b-0"
+                  >
+                    <template v-if="greenLoading">
+                      <td v-for="(cell, index) in skeletonHeader" :key="index" class="px-4 py-3">
+                        <Skeleton height="1.1rem" width="100%" />
+                      </td>
+                    </template>
+                    <template v-else>
+                      <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
+                      <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
+                      <td
+                        v-for="value in row.values"
+                        :key="value.key"
+                        class="px-4 py-3 text-slate-700"
+                      >
+                        {{ value.value }}
+                      </td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabPanel>
+
+        <TabPanel value="historical">
+          <div class="space-y-4 pt-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="text-base font-semibold text-slate-800">Air quality trend comparison</h2>
+                <p class="text-sm text-slate-500">Compare the last 3 months across suburbs.</p>
+              </div>
+              <div class="w-full sm:w-56">
+                <Dropdown
+                  v-model="selectedHistoricalMetric"
+                  :options="trendMetricOptions"
+                  option-label="label"
+                  option-value="key"
+                  placeholder="Select metric"
+                  class="w-full"
+                  aria-label="Trend metric"
+                />
+              </div>
+            </div>
+
+            <p v-if="trendLoading" class="text-sm text-slate-500">Loading trend data...</p>
+
+            <div v-if="trendComparisonErrors.length" class="space-y-1">
+              <p class="text-sm text-red-600">Some suburbs could not be loaded:</p>
+              <ul class="list-disc pl-5 text-sm text-red-600">
+                <li v-for="error in trendComparisonErrors" :key="error.key">{{ error.label }}</li>
+              </ul>
+            </div>
+
+            <p v-if="!trendLoading && !trendLabelKeys.length" class="text-sm text-slate-500">
+              No trend data available for the selected suburbs.
+            </p>
+
+            <div v-else class="rounded-2xl border border-slate-200 bg-white p-4">
+              <Chart
+                type="line"
+                :data="historicalChartData"
+                :options="historicalChartOptions"
+                class="h-80 w-full"
+              />
+              <p class="pt-2 text-xs text-slate-500">
+                Metric: {{ selectedHistoricalMetricLabel }}
+                <span v-if="historicalMetricUnit">({{ historicalMetricUnit }})</span>
+              </p>
+            </div>
+          </div>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
   </section>
 </template>
 
@@ -173,26 +239,39 @@ import Button from 'primevue/button'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
+import Chart from 'primevue/chart'
+import Tabs from 'primevue/tabs'
+import TabList from 'primevue/tablist'
+import Tab from 'primevue/tab'
+import TabPanels from 'primevue/tabpanels'
+import TabPanel from 'primevue/tabpanel'
 
 const states = ['NSW', 'VIC', 'TAS', 'NT', 'SA', 'WA', 'QLD', 'ACT']
+const activeTab = ref('current')
 const suburbInput = ref('')
 const selectedState = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
 const greenLoading = ref(false)
+const trendLoading = ref(false)
+const reloadCurrentPending = ref(false)
+const reloadGreenPending = ref(false)
+const reloadTrendPending = ref(false)
 const compareSuburbs = ref([])
 const comparisonResults = ref({})
 const greenComparisonResults = ref({})
+const trendComparisonResults = ref({})
 
 const MAX_COMPARE = 3
-const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const CACHE_PREFIX = 'airQualityCache:'
 const GREEN_CACHE_PREFIX = 'historicalWeatherCompareCache:'
+const TREND_CACHE_PREFIX = 'airQualityTrendCompareCache:'
 const COMPARE_STORAGE_KEY = 'compare:suburbs'
-const HISTORICAL_WEATHER_ENDPOINT =
-  'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
+const HISTORICAL_WEATHER_ENDPOINT = 'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
 const HISTORICAL_DAYS = 30
-const CACHE_PREFIXES = [CACHE_PREFIX, GREEN_CACHE_PREFIX]
+const HISTORICAL_TREND_DAYS = 92
+const CACHE_PREFIXES = [CACHE_PREFIX, GREEN_CACHE_PREFIX, TREND_CACHE_PREFIX]
 const runtimeCache = new Map()
 
 const pollutants = [
@@ -203,6 +282,10 @@ const pollutants = [
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
 ]
+
+const trendMetricOptions = pollutants
+const selectedHistoricalMetric = ref('pm2_5')
+
 const greenMetrics = [
   { key: 'temperature_2m', label: 'Temperature (2 m)' },
   { key: 'rain', label: 'Rain' },
@@ -225,13 +308,16 @@ const toTitleCase = (value) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 
-// Persist compare selections and cached metrics to local storage.
+// Persist compare selections and loaded metrics in local storage.
 const saveCompareState = () => {
   try {
     const payload = {
       suburbs: compareSuburbs.value,
       results: comparisonResults.value,
       greenResults: greenComparisonResults.value,
+      trendResults: trendComparisonResults.value,
+      selectedHistoricalMetric: selectedHistoricalMetric.value,
+      activeTab: activeTab.value,
     }
     localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(payload))
   } catch {
@@ -239,7 +325,7 @@ const saveCompareState = () => {
   }
 }
 
-// Load compare selections and cached metrics from local storage.
+// Load compare selections and loaded metrics from local storage.
 const loadCompareState = () => {
   try {
     const raw = localStorage.getItem(COMPARE_STORAGE_KEY)
@@ -256,14 +342,27 @@ const loadCompareState = () => {
     if (parsed?.greenResults && typeof parsed.greenResults === 'object') {
       greenComparisonResults.value = parsed.greenResults
     }
+    if (parsed?.trendResults && typeof parsed.trendResults === 'object') {
+      trendComparisonResults.value = parsed.trendResults
+    }
+    if (
+      typeof parsed?.selectedHistoricalMetric === 'string' &&
+      trendMetricOptions.some((metric) => metric.key === parsed.selectedHistoricalMetric)
+    ) {
+      selectedHistoricalMetric.value = parsed.selectedHistoricalMetric
+    }
+    if (parsed?.activeTab === 'current' || parsed?.activeTab === 'historical') {
+      activeTab.value = parsed.activeTab
+    }
   } catch {
     compareSuburbs.value = []
     comparisonResults.value = {}
     greenComparisonResults.value = {}
+    trendComparisonResults.value = {}
   }
 }
 
-// Read cached air quality data from local storage if it is still fresh.
+// Read cached entries from runtime memory first, then browser storage.
 const readCache = (cacheKey) => {
   const runtimeEntry = runtimeCache.get(cacheKey)
   if (runtimeEntry && Date.now() - runtimeEntry.fetchedAt <= CACHE_TTL_MS) {
@@ -277,6 +376,7 @@ const readCache = (cacheKey) => {
   if (!raw) {
     return null
   }
+
   try {
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') {
@@ -361,10 +461,12 @@ const pruneCacheStorage = (removeAll = false) => {
     })
 }
 
-// Store fresh air quality data in local storage.
+// Store fresh cache data in local storage with Safari quota fallback handling.
 const writeCache = (cacheKey, data) => {
-  runtimeCache.set(cacheKey, { fetchedAt: Date.now(), data })
-  const payload = JSON.stringify({ fetchedAt: Date.now(), data })
+  const fetchedAt = Date.now()
+  runtimeCache.set(cacheKey, { fetchedAt, data })
+  const payload = JSON.stringify({ fetchedAt, data })
+
   try {
     localStorage.setItem(cacheKey, payload)
   } catch (error) {
@@ -389,10 +491,76 @@ const writeCache = (cacheKey, data) => {
   }
 }
 
+// Pull a readable error message from failed API responses.
+const getApiErrorMessage = async (response, fallbackMessage) => {
+  let message = fallbackMessage
+  try {
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const payload = await response.json()
+      if (payload?.error) {
+        message = payload.error
+      }
+    } else {
+      const text = await response.text()
+      if (text) {
+        message = text
+      }
+    }
+  } catch {
+    message = fallbackMessage
+  }
+  if (response.status === 429 && !/quota/i.test(message)) {
+    message = 'The data provider quota has been exceeded. Please try again later.'
+  }
+  return message
+}
+
 // Resolve the base URL for the Firebase Functions endpoint.
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 
-// Transform air quality payloads into metrics keyed by pollutant.
+const getLatestNumericValue = (values) => {
+  if (!Array.isArray(values)) {
+    return null
+  }
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = Number(values[index])
+    if (Number.isFinite(value)) {
+      return value
+    }
+  }
+  return null
+}
+
+const formatIsoDate = (date) => date.toISOString().slice(0, 10)
+
+const getHistoricalDateRange = (days) => {
+  const now = new Date()
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const startDate = new Date(todayUtc)
+  startDate.setUTCDate(todayUtc.getUTCDate() - (days - 1))
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(todayUtc),
+  }
+}
+
+// Format a YYYY-MM-DD string into a compact label.
+const formatDateLabel = (dateValue) => {
+  if (typeof dateValue !== 'string') {
+    return ''
+  }
+  const [year, month, day] = dateValue.split('-')
+  if (!year || !month || !day) {
+    return dateValue
+  }
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthIndex = Number.parseInt(month, 10) - 1
+  const monthLabel = monthLabels[monthIndex] || month
+  return `${day} ${monthLabel}`
+}
+
+// Transform air quality payloads into current metrics keyed by pollutant.
 const buildAirQualityMetrics = (payload) => {
   if (!payload || typeof payload !== 'object') {
     return null
@@ -431,32 +599,7 @@ const buildAirQualityMetrics = (payload) => {
   }, {})
 }
 
-const getLatestNumericValue = (values) => {
-  if (!Array.isArray(values)) {
-    return null
-  }
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    const value = Number(values[index])
-    if (Number.isFinite(value)) {
-      return value
-    }
-  }
-  return null
-}
-
-const formatIsoDate = (date) => date.toISOString().slice(0, 10)
-
-const getHistoricalDateRange = (days) => {
-  const now = new Date()
-  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  const startDate = new Date(todayUtc)
-  startDate.setUTCDate(todayUtc.getUTCDate() - (days - 1))
-  return {
-    startDate: formatIsoDate(startDate),
-    endDate: formatIsoDate(todayUtc),
-  }
-}
-
+// Transform historical weather payloads into latest values per metric.
 const buildGreenMetrics = (payload) => {
   if (!payload || typeof payload !== 'object') {
     return null
@@ -476,7 +619,85 @@ const buildGreenMetrics = (payload) => {
   }, {})
 }
 
-// Fetch air quality data for a single suburb, using cache when possible.
+// Build daily averages from hourly air quality payloads for the historical comparison chart.
+const buildTrendSeries = (payload) => {
+  const fallback = { labels: [], series: {}, units: {} }
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  if (timeList.length === 0) {
+    return fallback
+  }
+
+  const labels = []
+  const labelIndex = new Map()
+  const sums = {}
+  const counts = {}
+  const units = {}
+
+  trendMetricOptions.forEach(({ key }) => {
+    sums[key] = []
+    counts[key] = []
+    units[key] = hourlyUnits[key] || 'ug/m3'
+  })
+
+  timeList.forEach((timeValue, index) => {
+    if (typeof timeValue !== 'string') {
+      return
+    }
+    const day = timeValue.split('T')[0]
+    if (!day) {
+      return
+    }
+
+    let dayIndex = labelIndex.get(day)
+    if (dayIndex === undefined) {
+      dayIndex = labels.length
+      labelIndex.set(day, dayIndex)
+      labels.push(day)
+      trendMetricOptions.forEach(({ key }) => {
+        sums[key][dayIndex] = 0
+        counts[key][dayIndex] = 0
+      })
+    }
+
+    trendMetricOptions.forEach(({ key }) => {
+      const series = hourly[key]
+      if (!Array.isArray(series)) {
+        return
+      }
+      const value = series[index]
+      if (value === null || value === undefined) {
+        return
+      }
+      const numericValue = Number(value)
+      if (!Number.isFinite(numericValue)) {
+        return
+      }
+      sums[key][dayIndex] += numericValue
+      counts[key][dayIndex] += 1
+    })
+  })
+
+  const series = {}
+  trendMetricOptions.forEach(({ key }) => {
+    series[key] = sums[key].map((total, idx) => {
+      const count = counts[key][idx]
+      if (!count) {
+        return null
+      }
+      return Number((total / count).toFixed(2))
+    })
+  })
+
+  return { labels, series, units }
+}
+
+// Fetch current air metrics for one suburb, using 1-day cache.
 const fetchAirQuality = async (suburbName, state) => {
   const suburbQuery = suburbName.trim()
   const airQualityUrl = getAirQualityUrl()
@@ -511,7 +732,8 @@ const fetchAirQuality = async (suburbName, state) => {
 
   const airResponse = await fetch(airUrl)
   if (!airResponse.ok) {
-    throw new Error('Failed to fetch air quality data.')
+    const message = await getApiErrorMessage(airResponse, 'Failed to fetch air quality data.')
+    throw new Error(message)
   }
 
   const airPayload = await airResponse.json()
@@ -524,6 +746,7 @@ const fetchAirQuality = async (suburbName, state) => {
   return metrics
 }
 
+// Fetch latest historical-weather summary metrics for one suburb, using 1-day cache.
 const fetchHistoricalWeather = async (suburbName, state) => {
   const suburbQuery = suburbName.trim()
   const cacheKey = `${GREEN_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
@@ -553,7 +776,8 @@ const fetchHistoricalWeather = async (suburbName, state) => {
 
   const response = await fetch(weatherUrl)
   if (!response.ok) {
-    throw new Error('Failed to fetch historical weather data.')
+    const message = await getApiErrorMessage(response, 'Failed to fetch historical weather data.')
+    throw new Error(message)
   }
 
   const payload = await response.json()
@@ -564,6 +788,50 @@ const fetchHistoricalWeather = async (suburbName, state) => {
   }
   writeCache(cacheKey, metrics)
   return metrics
+}
+
+// Fetch three-month air quality trends for one suburb, using compact cached payloads.
+const fetchAirQualityTrend = async (suburbName, state) => {
+  const suburbQuery = suburbName.trim()
+  const airQualityUrl = getAirQualityUrl()
+  if (!airQualityUrl) {
+    throw new Error('Missing Firebase Functions base URL configuration.')
+  }
+
+  const cacheKey = `${TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    if (Array.isArray(cachedData.labels) && cachedData.series && cachedData.units) {
+      return cachedData
+    }
+    const seriesFromCache = buildTrendSeries(cachedData)
+    if (seriesFromCache.labels.length > 0) {
+      writeCache(cacheKey, seriesFromCache)
+      return seriesFromCache
+    }
+  }
+
+  const airUrl = new URL(airQualityUrl)
+  airUrl.searchParams.set('suburb', suburbQuery)
+  airUrl.searchParams.set('state', state.toUpperCase())
+  airUrl.searchParams.set(
+    'hourly',
+    'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
+  )
+  airUrl.searchParams.set('past_days', String(HISTORICAL_TREND_DAYS))
+  airUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(airUrl)
+  if (!response.ok) {
+    const message = await getApiErrorMessage(response, 'Failed to fetch air quality trend data.')
+    throw new Error(message)
+  }
+
+  const payload = await response.json()
+  const data = payload.data || payload
+  const trendSeries = buildTrendSeries(data)
+  writeCache(cacheKey, trendSeries)
+  return trendSeries
 }
 
 // Add a suburb into the comparison list.
@@ -599,19 +867,30 @@ const handleAdd = () => {
   selectedState.value = ''
 }
 
-// Remove a suburb and its results from comparison.
+// Remove a suburb and its loaded results from comparison.
 const removeSuburb = (key) => {
   compareSuburbs.value = compareSuburbs.value.filter((suburb) => suburb.key !== key)
-  if (comparisonResults.value[key]) {
-    const nextResults = { ...comparisonResults.value }
-    delete nextResults[key]
-    comparisonResults.value = nextResults
-  }
+
+  const nextCurrentResults = { ...comparisonResults.value }
+  delete nextCurrentResults[key]
+  comparisonResults.value = nextCurrentResults
+
+  const nextGreenResults = { ...greenComparisonResults.value }
+  delete nextGreenResults[key]
+  greenComparisonResults.value = nextGreenResults
+
+  const nextTrendResults = { ...trendComparisonResults.value }
+  delete nextTrendResults[key]
+  trendComparisonResults.value = nextTrendResults
 }
 
-// Load air quality metrics for all selected suburbs.
+// Load current air quality metrics for all selected suburbs.
 const loadComparison = async () => {
   if (compareSuburbs.value.length < 2) {
+    return
+  }
+  if (loading.value) {
+    reloadCurrentPending.value = true
     return
   }
 
@@ -637,10 +916,19 @@ const loadComparison = async () => {
 
   comparisonResults.value = results
   loading.value = false
+  if (reloadCurrentPending.value) {
+    reloadCurrentPending.value = false
+    loadComparison()
+  }
 }
 
+// Load current historical-weather summary metrics for all selected suburbs.
 const loadGreenComparison = async () => {
   if (compareSuburbs.value.length < 2) {
+    return
+  }
+  if (greenLoading.value) {
+    reloadGreenPending.value = true
     return
   }
 
@@ -666,6 +954,48 @@ const loadGreenComparison = async () => {
 
   greenComparisonResults.value = results
   greenLoading.value = false
+  if (reloadGreenPending.value) {
+    reloadGreenPending.value = false
+    loadGreenComparison()
+  }
+}
+
+// Load three-month trend series for all selected suburbs.
+const loadTrendComparison = async () => {
+  if (compareSuburbs.value.length < 2) {
+    return
+  }
+  if (trendLoading.value) {
+    reloadTrendPending.value = true
+    return
+  }
+
+  trendLoading.value = true
+  const results = { ...trendComparisonResults.value }
+
+  await Promise.all(
+    compareSuburbs.value.map(async (suburb) => {
+      try {
+        const trend = await fetchAirQualityTrend(suburb.suburb, suburb.state)
+        results[suburb.key] = {
+          label: suburb.label,
+          trend,
+        }
+      } catch (error) {
+        results[suburb.key] = {
+          label: suburb.label,
+          error: error instanceof Error ? error.message : 'Unexpected error.',
+        }
+      }
+    }),
+  )
+
+  trendComparisonResults.value = results
+  trendLoading.value = false
+  if (reloadTrendPending.value) {
+    reloadTrendPending.value = false
+    loadTrendComparison()
+  }
 }
 
 const comparisonRows = computed(() =>
@@ -728,6 +1058,115 @@ const greenComparisonErrors = computed(() =>
     })),
 )
 
+const trendComparisonErrors = computed(() =>
+  compareSuburbs.value
+    .filter((suburb) => trendComparisonResults.value[suburb.key]?.error)
+    .map((suburb) => ({
+      key: suburb.key,
+      label: `${suburb.label}: ${trendComparisonResults.value[suburb.key].error}`,
+    })),
+)
+
+// Build a unified date axis for all suburbs in the historical trend chart.
+const trendLabelKeys = computed(() => {
+  const labelSet = new Set()
+  compareSuburbs.value.forEach((suburb) => {
+    const labels = trendComparisonResults.value[suburb.key]?.trend?.labels || []
+    labels.forEach((label) => {
+      if (typeof label === 'string') {
+        labelSet.add(label)
+      }
+    })
+  })
+  return Array.from(labelSet).sort()
+})
+
+const selectedHistoricalMetricLabel = computed(() => {
+  const metric = trendMetricOptions.find((item) => item.key === selectedHistoricalMetric.value)
+  return metric ? metric.label : selectedHistoricalMetric.value
+})
+
+const historicalMetricUnit = computed(() => {
+  for (const suburb of compareSuburbs.value) {
+    const unit = trendComparisonResults.value[suburb.key]?.trend?.units?.[selectedHistoricalMetric.value]
+    if (unit) {
+      return unit
+    }
+  }
+  return ''
+})
+
+const historicalChartData = computed(() => {
+  const labelKeys = trendLabelKeys.value
+  const labels = labelKeys.map(formatDateLabel)
+  const palette = ['#0f766e', '#2563eb', '#be123c']
+
+  const datasets = compareSuburbs.value.map((suburb, index) => {
+    const trend = trendComparisonResults.value[suburb.key]?.trend
+    const suburbLabels = Array.isArray(trend?.labels) ? trend.labels : []
+    const suburbValues = Array.isArray(trend?.series?.[selectedHistoricalMetric.value])
+      ? trend.series[selectedHistoricalMetric.value]
+      : []
+
+    const valueMap = new Map()
+    suburbLabels.forEach((label, labelIndex) => {
+      const numericValue = Number(suburbValues[labelIndex])
+      valueMap.set(label, Number.isFinite(numericValue) ? numericValue : null)
+    })
+
+    const color = palette[index % palette.length]
+    return {
+      label: suburb.label,
+      data: labelKeys.map((label) => valueMap.get(label) ?? null),
+      fill: false,
+      tension: 0.3,
+      borderColor: color,
+      backgroundColor: color,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      borderWidth: 2,
+      spanGaps: true,
+    }
+  })
+
+  return {
+    labels,
+    datasets,
+  }
+})
+
+const historicalChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      labels: {
+        color: '#334155',
+      },
+    },
+  },
+  scales: {
+    x: {
+      ticks: {
+        color: '#64748b',
+        maxTicksLimit: 12,
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+    y: {
+      ticks: {
+        color: '#64748b',
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+  },
+}))
+
 const skeletonHeader = computed(() => Array.from({ length: compareSuburbs.value.length + 2 }))
 
 // Refresh metrics whenever the selected suburbs change.
@@ -740,9 +1179,19 @@ watch(
     }
     loadComparison()
     loadGreenComparison()
+    if (activeTab.value === 'historical') {
+      loadTrendComparison()
+    }
   },
   { deep: true },
 )
+
+// Load trends when the historical tab is opened.
+watch(activeTab, (value) => {
+  if (value === 'historical' && compareSuburbs.value.length >= 2) {
+    loadTrendComparison()
+  }
+})
 
 // Persist compare results whenever metrics update.
 watch(
@@ -759,8 +1208,15 @@ watch(
   },
   { deep: true },
 )
+watch(
+  () => trendComparisonResults.value,
+  () => {
+    saveCompareState()
+  },
+  { deep: true },
+)
 
-// Persist compare selection changes.
+// Persist compare selection and display settings.
 watch(
   () => compareSuburbs.value,
   () => {
@@ -768,12 +1224,17 @@ watch(
   },
   { deep: true },
 )
+watch(selectedHistoricalMetric, saveCompareState)
+watch(activeTab, saveCompareState)
 
 onMounted(() => {
   loadCompareState()
   if (compareSuburbs.value.length >= 2) {
     loadComparison()
     loadGreenComparison()
+    if (activeTab.value === 'historical') {
+      loadTrendComparison()
+    }
   }
 })
 </script>
