@@ -5,6 +5,7 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import Tooltip from 'primevue/tooltip'
 import { definePreset } from '@primevue/themes'
 import Aura from '@primevue/themes/aura'
 import { useAuthStore } from './stores/auth'
@@ -23,6 +24,7 @@ app.use(PrimeVue, {
     preset: primePreset,
   },
 })
+app.directive('tooltip', Tooltip)
 
 const authStore = useAuthStore(pinia)
 authStore.init()

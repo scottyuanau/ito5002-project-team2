@@ -140,7 +140,19 @@
                 class="w-full"
                 :loading="loading || trendLoading"
               >
-                <Column field="pollutant" header="Pollutant"></Column>
+                <Column field="pollutant" header="Pollutant">
+                  <template #body="{ data }">
+                    <div class="flex items-center gap-2">
+                      <span>{{ data.pollutant }}</span>
+                      <i
+                        v-if="pollutantDescriptions[data.key]"
+                        v-tooltip.bottom="pollutantDescriptions[data.key]"
+                        class="pi pi-question-circle text-slate-400 cursor-pointer"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </template>
+                </Column>
                 <Column field="value" header="Current"></Column>
                 <Column field="unit" header="Unit"></Column>
                 <Column field="median" header="Median"></Column>
@@ -346,6 +358,20 @@ const trendMetricOptions = [
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
 ]
+const pollutantDescriptions = {
+  pm2_5:
+    'PM2.5: Fine particles from exhaust, smoke and industry that can travel deep into lungs and blood.',
+  pm10:
+    'PM10: Larger particles like dust, pollen and smoke that can irritate airways and trigger asthma symptoms.',
+  carbon_monoxide:
+    'CO: A colorless, odorless gas from incomplete fuel burning that reduces oxygen delivery in the body.',
+  nitrogen_dioxide:
+    'NO2: A traffic-related gas that inflames lungs and worsens asthma and respiratory infections.',
+  sulphur_dioxide:
+    'SO2: A gas from fossil fuels and industry that can quickly trigger breathing difficulty and chest tightness.',
+  ozone:
+    'O3: Ground-level ozone formed in sunlight from emissions; it irritates lungs and makes exercise harder.',
+}
 const heatmapMetricOptions = trendMetricOptions
 const selectedTrendMetric = ref('pm2_5')
 const trendSeries = ref({ labels: [], series: {}, units: {} })
