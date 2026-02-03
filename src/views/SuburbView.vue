@@ -239,7 +239,19 @@
               </p>
               <p v-if="greenError" class="text-sm text-red-600">{{ greenError }}</p>
               <DataTable :value="greenSummaryRows" stripedRows class="w-full" :loading="greenLoading">
-                <Column field="metric" header="Metric"></Column>
+                <Column field="metric" header="Metric">
+                  <template #body="{ data }">
+                    <div class="flex items-center gap-2">
+                      <span>{{ data.metric }}</span>
+                      <i
+                        v-if="greenMetricDescriptions[data.key]"
+                        v-tooltip.bottom="greenMetricDescriptions[data.key]"
+                        class="pi pi-question-circle text-slate-400 cursor-pointer"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </template>
+                </Column>
                 <Column field="value" header="Current"></Column>
                 <Column field="unit" header="Unit"></Column>
                 <Column field="median" header="Median"></Column>
@@ -662,6 +674,17 @@ const greenMetricOptions = [
   { key: 'soil_temperature_0_to_7cm', label: 'Soil Temperature (0-7 cm)', unitFallback: '°C' },
   { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)', unitFallback: 'm³/m³' },
 ]
+const greenMetricDescriptions = {
+  temperature_2m:
+    'Air temperature at 2 meters above ground, a standard reference for local ambient conditions.',
+  rain: 'Rainfall amount accumulated over the measurement interval.',
+  vapour_pressure_deficit:
+    'Dryness of the air; higher VPD means air pulls more moisture from soil and plants.',
+  soil_temperature_0_to_7cm:
+    'Soil temperature near the surface (0-7 cm), useful for root-zone and germination conditions.',
+  soil_moisture_0_to_7cm:
+    'Water content in topsoil (0-7 cm), indicating near-surface moisture availability.',
+}
 const greenTrendMetricOptions = [
   { key: 'temperature_2m', label: 'Temperature (2 m)' },
   { key: 'rain', label: 'Rain' },

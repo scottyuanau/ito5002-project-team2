@@ -105,7 +105,17 @@
                       </td>
                     </template>
                     <template v-else>
-                      <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
+                      <td class="px-4 py-3 font-medium text-slate-700">
+                        <div class="flex items-center gap-2">
+                          <span>{{ row.metric }}</span>
+                          <i
+                            v-if="pollutantDescriptions[row.key]"
+                            v-tooltip.bottom="pollutantDescriptions[row.key]"
+                            class="pi pi-question-circle cursor-pointer text-slate-400"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </td>
                       <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
                       <td
                         v-for="value in row.values"
@@ -164,7 +174,17 @@
                       </td>
                     </template>
                     <template v-else>
-                      <td class="px-4 py-3 font-medium text-slate-700">{{ row.metric }}</td>
+                      <td class="px-4 py-3 font-medium text-slate-700">
+                        <div class="flex items-center gap-2">
+                          <span>{{ row.metric }}</span>
+                          <i
+                            v-if="greenMetricDescriptions[row.key]"
+                            v-tooltip.bottom="greenMetricDescriptions[row.key]"
+                            class="pi pi-question-circle cursor-pointer text-slate-400"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </td>
                       <td class="px-4 py-3 text-slate-500">{{ row.unit || '—' }}</td>
                       <td
                         v-for="value in row.values"
@@ -282,6 +302,20 @@ const pollutants = [
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
 ]
+const pollutantDescriptions = {
+  pm2_5:
+    'PM2.5: Fine particles from exhaust, smoke and industry that can travel deep into lungs and blood.',
+  pm10:
+    'PM10: Larger particles like dust, pollen and smoke that can irritate airways and trigger asthma symptoms.',
+  carbon_monoxide:
+    'CO: A colorless, odorless gas from incomplete fuel burning that reduces oxygen delivery in the body.',
+  nitrogen_dioxide:
+    'NO2: A traffic-related gas that inflames lungs and worsens asthma and respiratory infections.',
+  sulphur_dioxide:
+    'SO2: A gas from fossil fuels and industry that can quickly trigger breathing difficulty and chest tightness.',
+  ozone:
+    'O3: Ground-level ozone formed in sunlight from emissions; it irritates lungs and makes exercise harder.',
+}
 
 const trendMetricOptions = pollutants
 const selectedHistoricalMetric = ref('pm2_5')
@@ -293,6 +327,17 @@ const greenMetrics = [
   { key: 'soil_temperature_0_to_7cm', label: 'Soil Temperature (0-7 cm)' },
   { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)' },
 ]
+const greenMetricDescriptions = {
+  temperature_2m:
+    'Air temperature at 2 meters above ground, a standard reference for local ambient conditions.',
+  rain: 'Rainfall amount accumulated over the measurement interval.',
+  vapour_pressure_deficit:
+    'Dryness of the air; higher VPD means air pulls more moisture from soil and plants.',
+  soil_temperature_0_to_7cm:
+    'Soil temperature near the surface (0-7 cm), useful for root-zone and germination conditions.',
+  soil_moisture_0_to_7cm:
+    'Water content in topsoil (0-7 cm), indicating near-surface moisture availability.',
+}
 
 const canAdd = computed(() => suburbInput.value.trim().length > 0 && selectedState.value)
 
