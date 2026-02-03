@@ -1,28 +1,5 @@
 <template>
   <div class="flex w-full flex-col gap-20">
-    <!-- Hero -->
-    <section>
-      <div class="relative h-96 w-full overflow-hidden shadow-sm md:h-120">
-        <img src="/banner.jpg" alt="Environmental banner" class="h-full w-full object-cover" />
-        <div class="absolute inset-0 bg-black/35"></div>
-        <div
-          class="absolute inset-0 flex flex-col gap-4 items-center justify-center px-6 text-center"
-        >
-          <h1 class="text-3xl font-semibold text-white drop-shadow-sm md:text-4xl">
-            Save the Environment
-          </h1>
-          <p class="text-white">for a sustainable community</p>
-          <Button
-            label="Compare Suburbs"
-            class="mt-2"
-            severity="secondary"
-            type="button"
-            @click="handleCompare"
-          />
-        </div>
-      </div>
-    </section>
-
     <!-- Today in your area -->
     <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
       <div class="space-y-2 text-center">
@@ -811,11 +788,6 @@ const loadLocalAirQuality = async () => {
   } finally {
     airQualityLoading.value = false
   }
-}
-
-// Navigate to the suburb comparison page.
-const handleCompare = () => {
-  router.push({ name: 'compare' })
 }
 
 // Navigate to a specific suburb when a valid search is submitted.
