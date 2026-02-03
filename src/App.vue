@@ -14,6 +14,10 @@
         <RouterLink to="/compare" class="transition hover:text-slate-900">Compare</RouterLink>
         <RouterLink to="/contact" class="transition hover:text-slate-900">Contact</RouterLink>
       </nav>
+      <p class="mt-4">
+        Data source: Zippenfenig, P. (2023) Open-Meteo.com Weather API. Zenodo. doi:
+        10.5281/ZENODO.7970649.
+      </p>
     </footer>
 
     <CookieConsentBanner />
