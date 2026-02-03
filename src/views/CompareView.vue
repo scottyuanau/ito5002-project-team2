@@ -192,6 +192,8 @@ const COMPARE_STORAGE_KEY = 'compare:suburbs'
 const HISTORICAL_WEATHER_ENDPOINT =
   'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
 const HISTORICAL_DAYS = 30
+const CACHE_PREFIXES = [CACHE_PREFIX, GREEN_CACHE_PREFIX]
+const runtimeCache = new Map()
 
 const pollutants = [
   { key: 'pm10', label: 'PM10' },
@@ -263,6 +265,14 @@ const loadCompareState = () => {
 
 // Read cached air quality data from local storage if it is still fresh.
 const readCache = (cacheKey) => {
+  const runtimeEntry = runtimeCache.get(cacheKey)
+  if (runtimeEntry && Date.now() - runtimeEntry.fetchedAt <= CACHE_TTL_MS) {
+    return runtimeEntry.data
+  }
+  if (runtimeEntry) {
+    runtimeCache.delete(cacheKey)
+  }
+
   const raw = localStorage.getItem(cacheKey)
   if (!raw) {
     return null
@@ -277,19 +287,106 @@ const readCache = (cacheKey) => {
     }
     if (Date.now() - parsed.fetchedAt > CACHE_TTL_MS) {
       localStorage.removeItem(cacheKey)
+      runtimeCache.delete(cacheKey)
       return null
     }
+    runtimeCache.set(cacheKey, { fetchedAt: parsed.fetchedAt, data: parsed.data })
     return parsed.data
   } catch {
     localStorage.removeItem(cacheKey)
+    runtimeCache.delete(cacheKey)
     return null
   }
 }
 
+const isQuotaExceededError = (error) =>
+  error instanceof DOMException &&
+  (error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error.code === 22 ||
+    error.code === 1014)
+
+// Remove stale and oldest app cache keys to free space for Safari localStorage limits.
+const pruneCacheStorage = (removeAll = false) => {
+  const now = Date.now()
+  const cacheEntries = []
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key || !CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      continue
+    }
+    const raw = localStorage.getItem(key)
+    if (!raw) {
+      continue
+    }
+    try {
+      const parsed = JSON.parse(raw)
+      cacheEntries.push({
+        key,
+        fetchedAt: typeof parsed?.fetchedAt === 'number' ? parsed.fetchedAt : 0,
+      })
+    } catch {
+      cacheEntries.push({ key, fetchedAt: 0 })
+    }
+  }
+
+  if (removeAll) {
+    cacheEntries.forEach((entry) => {
+      localStorage.removeItem(entry.key)
+      runtimeCache.delete(entry.key)
+    })
+    return
+  }
+
+  let removedCount = 0
+  cacheEntries.forEach((entry) => {
+    if (entry.fetchedAt <= 0 || now - entry.fetchedAt > CACHE_TTL_MS) {
+      localStorage.removeItem(entry.key)
+      runtimeCache.delete(entry.key)
+      removedCount += 1
+    }
+  })
+
+  if (removedCount > 0) {
+    return
+  }
+
+  cacheEntries
+    .sort((a, b) => a.fetchedAt - b.fetchedAt)
+    .slice(0, Math.ceil(cacheEntries.length / 2))
+    .forEach((entry) => {
+      localStorage.removeItem(entry.key)
+      runtimeCache.delete(entry.key)
+    })
+}
+
 // Store fresh air quality data in local storage.
 const writeCache = (cacheKey, data) => {
+  runtimeCache.set(cacheKey, { fetchedAt: Date.now(), data })
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
-  localStorage.setItem(cacheKey, payload)
+  try {
+    localStorage.setItem(cacheKey, payload)
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      return
+    }
+
+    try {
+      pruneCacheStorage(false)
+      localStorage.setItem(cacheKey, payload)
+    } catch (retryError) {
+      if (!isQuotaExceededError(retryError)) {
+        return
+      }
+      try {
+        pruneCacheStorage(true)
+        localStorage.setItem(cacheKey, payload)
+      } catch {
+        // Keep runtime cache only if persistent storage remains full.
+      }
+    }
+  }
 }
 
 // Resolve the base URL for the Firebase Functions endpoint.
@@ -390,7 +487,14 @@ const fetchAirQuality = async (suburbName, state) => {
   const cacheKey = `${CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
   const cachedData = readCache(cacheKey)
   if (cachedData) {
-    return cachedData
+    if (cachedData.pm2_5 || cachedData.pm10 || cachedData.carbon_monoxide) {
+      return cachedData
+    }
+    const metricsFromCache = buildAirQualityMetrics(cachedData)
+    if (metricsFromCache) {
+      writeCache(cacheKey, metricsFromCache)
+      return metricsFromCache
+    }
   }
 
   const airUrl = new URL(airQualityUrl)
@@ -412,8 +516,12 @@ const fetchAirQuality = async (suburbName, state) => {
 
   const airPayload = await airResponse.json()
   const data = airPayload.data || airPayload
-  writeCache(cacheKey, data)
-  return data
+  const metrics = buildAirQualityMetrics(data)
+  if (!metrics) {
+    throw new Error('Failed to parse air quality metrics.')
+  }
+  writeCache(cacheKey, metrics)
+  return metrics
 }
 
 const fetchHistoricalWeather = async (suburbName, state) => {
@@ -421,7 +529,14 @@ const fetchHistoricalWeather = async (suburbName, state) => {
   const cacheKey = `${GREEN_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
   const cachedData = readCache(cacheKey)
   if (cachedData) {
-    return cachedData
+    if (cachedData.temperature_2m || cachedData.rain) {
+      return cachedData
+    }
+    const metricsFromCache = buildGreenMetrics(cachedData)
+    if (metricsFromCache) {
+      writeCache(cacheKey, metricsFromCache)
+      return metricsFromCache
+    }
   }
 
   const { startDate, endDate } = getHistoricalDateRange(HISTORICAL_DAYS)
@@ -443,8 +558,12 @@ const fetchHistoricalWeather = async (suburbName, state) => {
 
   const payload = await response.json()
   const data = payload.data || payload
-  writeCache(cacheKey, data)
-  return data
+  const metrics = buildGreenMetrics(data)
+  if (!metrics) {
+    throw new Error('Failed to parse historical weather metrics.')
+  }
+  writeCache(cacheKey, metrics)
+  return metrics
 }
 
 // Add a suburb into the comparison list.
@@ -502,10 +621,10 @@ const loadComparison = async () => {
   await Promise.all(
     compareSuburbs.value.map(async (suburb) => {
       try {
-        const payload = await fetchAirQuality(suburb.suburb, suburb.state)
+        const metrics = await fetchAirQuality(suburb.suburb, suburb.state)
         results[suburb.key] = {
           label: suburb.label,
-          metrics: buildAirQualityMetrics(payload),
+          metrics,
         }
       } catch (error) {
         results[suburb.key] = {
@@ -531,10 +650,10 @@ const loadGreenComparison = async () => {
   await Promise.all(
     compareSuburbs.value.map(async (suburb) => {
       try {
-        const payload = await fetchHistoricalWeather(suburb.suburb, suburb.state)
+        const metrics = await fetchHistoricalWeather(suburb.suburb, suburb.state)
         results[suburb.key] = {
           label: suburb.label,
-          metrics: buildGreenMetrics(payload),
+          metrics,
         }
       } catch (error) {
         results[suburb.key] = {
