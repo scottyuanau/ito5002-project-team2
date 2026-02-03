@@ -91,6 +91,19 @@ export const useAuthStore = defineStore('auth', {
       await signOut(auth)
       this.user = null
     },
+    // Update the current user's display name shown across the app UI.
+    async updateDisplayName({ displayName }) {
+      if (!auth || !auth.currentUser) {
+        throw new Error('Firebase auth is not configured.')
+      }
+      const nextDisplayName = (displayName || '').trim()
+      if (!nextDisplayName) {
+        throw new Error('Display name cannot be empty.')
+      }
+      await updateProfile(auth.currentUser, { displayName: nextDisplayName })
+      this.user = { ...auth.currentUser }
+      return this.user
+    },
     // Re-authenticate with the current password before updating to a new password.
     async updatePassword({ currentPassword, newPassword }) {
       if (!auth || !auth.currentUser) {

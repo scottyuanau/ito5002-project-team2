@@ -112,6 +112,46 @@
               {{ passwordError }}
             </Message>
 
+            <Message v-if="profileSuccess" severity="success" :closable="false">
+              {{ profileSuccess }}
+            </Message>
+
+            <Message v-if="profileError" severity="error" :closable="false">
+              {{ profileError }}
+            </Message>
+
+            <div class="rounded-2xl border border-slate-200 bg-white p-6">
+              <div class="space-y-1">
+                <h2 class="text-lg font-semibold text-slate-900">Update name</h2>
+                <p class="text-sm text-slate-500">
+                  This name is used in greetings on your home page.
+                </p>
+              </div>
+
+              <form class="mt-5 space-y-4" @submit.prevent="handleProfileUpdate">
+                <div class="space-y-2">
+                  <label class="text-sm font-medium text-slate-700" for="display-name">
+                    Display name
+                  </label>
+                  <InputText
+                    v-model="displayNameInput"
+                    input-id="display-name"
+                    class="w-full"
+                    placeholder="Enter your name"
+                    autocomplete="name"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  label="Update name"
+                  class="w-full sm:w-auto"
+                  :loading="isUpdatingProfile"
+                  :disabled="!canSubmitProfileUpdate"
+                />
+              </form>
+            </div>
+
             <div class="rounded-2xl border border-slate-200 bg-white p-6">
               <div class="space-y-1">
                 <h2 class="text-lg font-semibold text-slate-900">Update password</h2>
@@ -245,6 +285,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
+import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Password from 'primevue/password'
 import Tabs from 'primevue/tabs'
@@ -262,8 +303,12 @@ const username = computed(() => authStore.displayName || 'there')
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
+const displayNameInput = ref('')
 const passwordError = ref('')
 const passwordSuccess = ref('')
+const profileError = ref('')
+const profileSuccess = ref('')
+const isUpdatingProfile = ref(false)
 const isUpdatingPassword = ref(false)
 const enquiries = ref([])
 const enquiriesLoading = ref(true)
@@ -299,6 +344,13 @@ const canSubmitPasswordUpdate = computed(
     Boolean(currentPassword.value && newPassword.value && confirmPassword.value) &&
     canUpdatePassword.value &&
     !isUpdatingPassword.value
+)
+const canSubmitProfileUpdate = computed(
+  () =>
+    Boolean(displayNameInput.value.trim()) &&
+    displayNameInput.value.trim() !== authStore.displayName &&
+    !isUpdatingProfile.value &&
+    authStore.isConfigured
 )
 const canSendNotification = computed(
   () =>
@@ -915,6 +967,39 @@ const handlePasswordUpdate = async () => {
   }
 }
 
+// Update the current user's display name used by greetings.
+const handleProfileUpdate = async () => {
+  profileError.value = ''
+  profileSuccess.value = ''
+
+  if (!authStore.isConfigured) {
+    profileError.value = 'Firebase auth is not configured.'
+    return
+  }
+
+  const trimmedName = displayNameInput.value.trim()
+  if (!trimmedName) {
+    profileError.value = 'Please enter your name.'
+    return
+  }
+
+  if (trimmedName === authStore.displayName) {
+    profileError.value = 'Your name is already up to date.'
+    return
+  }
+
+  isUpdatingProfile.value = true
+  try {
+    await authStore.updateDisplayName({ displayName: trimmedName })
+    displayNameInput.value = trimmedName
+    profileSuccess.value = 'Your name has been updated.'
+  } catch (err) {
+    profileError.value = err?.message ?? 'Unable to update your name.'
+  } finally {
+    isUpdatingProfile.value = false
+  }
+}
+
 onMounted(() => {
   setupEnquiriesListener()
   setupSubscriptionListener()
@@ -925,6 +1010,7 @@ onMounted(() => {
     notificationNow.value = Date.now()
     refreshEmailDailyCount()
   }, 60000)
+  displayNameInput.value = authStore.displayName || ''
 })
 
 onBeforeUnmount(() => {
@@ -949,6 +1035,12 @@ watch(
     subscriptionsError.value = ''
     subscriptions.value = []
     setupSubscriptionListener()
+  }
+)
+watch(
+  () => authStore.displayName,
+  (value) => {
+    displayNameInput.value = value || ''
   }
 )
 </script>
