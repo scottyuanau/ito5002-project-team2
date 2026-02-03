@@ -1057,6 +1057,7 @@ const comparisonRows = computed(() =>
         .find((value) => value) || ''
 
     return {
+      key: metric.key,
       metric: metric.label,
       unit,
       values,
@@ -1078,6 +1079,7 @@ const greenComparisonRows = computed(() =>
         .find((value) => value) || ''
 
     return {
+      key: metric.key,
       metric: metric.label,
       unit,
       values,
