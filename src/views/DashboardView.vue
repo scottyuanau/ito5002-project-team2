@@ -585,6 +585,23 @@ const getPm25Recommendations = (tierLabel) => {
   ]
 }
 
+// Keep mask guidance aligned with PM2.5 tiers used across UI and notifications.
+const getPm25MaskAdvice = (tierLabel) => {
+  if (tierLabel === 'Very Good' || tierLabel === 'Good') {
+    return { emoji: '😌', text: 'Mask advice: No mask needed for most people.' }
+  }
+  if (tierLabel === 'Moderate') {
+    return {
+      emoji: '😷',
+      text: 'Mask advice: Consider a mask if you are sensitive or outdoors for long periods.',
+    }
+  }
+  if (tierLabel === 'Poor' || tierLabel === 'Very Poor' || tierLabel === 'Hazardous') {
+    return { emoji: '😷', text: 'Mask advice: Wear a well-fitted mask outdoors.' }
+  }
+  return { emoji: '⚪', text: 'Mask advice: Unavailable without recent PM2.5 data.' }
+}
+
 // Fetch air quality data for a subscription with caching.
 const fetchAirQualityForSubscription = async (subscription) => {
   const suburbName = subscription.lgaName || 'Unknown suburb'
@@ -631,11 +648,13 @@ const buildNotificationMessage = async () => {
         const currentValue = extractCurrentPm25(result.payload)
         const tier = getPm25Tier(currentValue)
         const recommendations = getPm25Recommendations(tier.label)
+        const maskAdvice = getPm25MaskAdvice(tier.label)
         return {
           suburbName: result.suburbName,
           currentValue,
           unit: 'ug/m3',
           tier,
+          maskAdvice,
           recommendations,
         }
       } catch (error) {
@@ -644,6 +663,7 @@ const buildNotificationMessage = async () => {
           currentValue: null,
           unit: 'ug/m3',
           tier: getPm25Tier(null),
+          maskAdvice: getPm25MaskAdvice('Unavailable'),
           recommendations: getPm25Recommendations('Unavailable'),
           error,
         }
@@ -666,6 +686,8 @@ const buildNotificationMessage = async () => {
         entry.tier.summary,
         '✅',
         entry.tier.guidance,
+        entry.maskAdvice.emoji,
+        entry.maskAdvice.text,
       ]
       entry.recommendations.forEach((recommendation) => {
         lines.push(recommendation.emoji)

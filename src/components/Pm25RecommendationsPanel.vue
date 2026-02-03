@@ -27,6 +27,10 @@
           <span>✅</span>
           <span>{{ pm25Tier.guidance }}</span>
         </li>
+        <li class="flex items-start gap-2">
+          <span>{{ pm25MaskAdvice.emoji }}</span>
+          <span>{{ pm25MaskAdvice.text }}</span>
+        </li>
       </ul>
       <ul class="mt-4 space-y-2 text-sm text-slate-600">
         <li
@@ -182,6 +186,34 @@ const getPm25Tier = (value) => {
 }
 
 const pm25Tier = computed(() => getPm25Tier(pm25CurrentValue.value))
+
+// Provide a dedicated mask recommendation row for each PM2.5 tier.
+const getPm25MaskAdvice = (tierLabel) => {
+  if (tierLabel === 'Very Good' || tierLabel === 'Good') {
+    return {
+      emoji: '😌',
+      text: 'Mask advice: No mask needed for most people.',
+    }
+  }
+  if (tierLabel === 'Moderate') {
+    return {
+      emoji: '😷',
+      text: 'Mask advice: Consider a mask if you are sensitive or outdoors for long periods.',
+    }
+  }
+  if (tierLabel === 'Poor' || tierLabel === 'Very Poor' || tierLabel === 'Hazardous') {
+    return {
+      emoji: '😷',
+      text: 'Mask advice: Wear a well-fitted mask outdoors.',
+    }
+  }
+  return {
+    emoji: '⚪',
+    text: 'Mask advice: Unavailable without recent PM2.5 data.',
+  }
+}
+
+const pm25MaskAdvice = computed(() => getPm25MaskAdvice(pm25Tier.value.label))
 
 const getPm25TierColor = (tierLabel) => {
   if (tierLabel === 'Very Good') {
