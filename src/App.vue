@@ -12,6 +12,7 @@
       <nav class="flex flex-wrap justify-center gap-6 uppercase tracking-[0.2em]">
         <RouterLink to="/" class="transition hover:text-slate-900">Home</RouterLink>
         <RouterLink to="/compare" class="transition hover:text-slate-900">Compare</RouterLink>
+        <RouterLink to="/knowledge" class="transition hover:text-slate-900">Knowledge</RouterLink>
         <RouterLink to="/contact" class="transition hover:text-slate-900">Contact</RouterLink>
       </nav>
       <p class="mt-4">

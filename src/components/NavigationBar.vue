@@ -60,6 +60,15 @@ const items = computed(() => [
       }
     },
   },
+  {
+    label: 'Knowledge',
+    icon: 'pi pi-book',
+    command: () => {
+      if (route.path !== '/knowledge') {
+        router.push('/knowledge')
+      }
+    },
+  },
   // new Plant Tips menu item
   {
     label: 'Plant Tips',
