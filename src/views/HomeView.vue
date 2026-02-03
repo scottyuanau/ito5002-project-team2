@@ -1,5 +1,13 @@
 <template>
   <div class="flex w-full flex-col gap-20">
+    <section class="mx-auto flex w-full max-w-5xl px-6">
+      <div class="w-full text-left">
+        <p class="text-sm font-medium text-slate-500">Welcome back</p>
+        <h1 class="mt-1 text-3xl font-semibold text-slate-900">{{ greetingMessage }}</h1>
+        <p class="mt-2 text-sm text-slate-600">Let&apos;s find out the air quality today.</p>
+      </div>
+    </section>
+
     <!-- Today in your area -->
     <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
       <div class="space-y-2 text-center">
@@ -149,8 +157,10 @@ import Chart from 'primevue/chart'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
 import Pm25RecommendationsPanel from '../components/Pm25RecommendationsPanel.vue'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const suburb = ref('')
 const selectedState = ref('')
 const states = ['NSW', 'VIC', 'TAS', 'NT', 'SA', 'WA', 'QLD', 'ACT']
@@ -185,6 +195,35 @@ const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
 const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 const HOME_PM25_HOURLY_CACHE_PREFIX = 'homePm25HourlyCache:v1:'
+
+const greetingName = computed(() => {
+  const raw = (authStore.displayName || '').trim()
+  if (!raw) {
+    return ''
+  }
+  return raw
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+})
+
+const greetingTimeOfDay = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 12) {
+    return 'morning'
+  }
+  if (hour < 18) {
+    return 'afternoon'
+  }
+  return 'evening'
+})
+
+const greetingMessage = computed(() =>
+  greetingName.value
+    ? `Good ${greetingTimeOfDay.value}, ${greetingName.value}!`
+    : `Good ${greetingTimeOfDay.value}!`,
+)
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 
