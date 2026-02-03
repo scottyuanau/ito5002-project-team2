@@ -96,6 +96,39 @@
                 :trend-values="pm25TrendValues"
                 :unit="pm25Unit"
               />
+              <div class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                <div>
+                  <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
+                  <p class="text-xs text-slate-500">
+                    Last 12 hours and forecast for next 12 hours.
+                  </p>
+                </div>
+                <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
+                <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
+                  Loading hourly PM2.5 data...
+                </p>
+                <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">
+                  {{ pm25HourlyNotice }}
+                </p>
+                <p
+                  v-if="
+                    !pm25HourlyLoading &&
+                    !pm25HourlyError &&
+                    !pm25HourlyChartData.labels.length
+                  "
+                  class="text-sm text-slate-500"
+                >
+                  No hourly PM2.5 data available right now.
+                </p>
+                <div v-else class="h-72 w-full">
+                  <Chart
+                    type="line"
+                    :data="pm25HourlyChartData"
+                    :options="pm25HourlyChartOptions"
+                    class="h-full w-full"
+                  />
+                </div>
+              </div>
             </div>
             <div v-else-if="activeAirSubtab === 'summary'" class="space-y-4">
               <p class="text-sm text-slate-500">Current air pollution levels.</p>
@@ -353,6 +386,11 @@ const heatmapError = ref('')
 const heatmapNotice = ref('')
 const heatmapLoaded = ref(false)
 const heatmapPoints = ref([])
+const pm25HourlyLoading = ref(false)
+const pm25HourlyError = ref('')
+const pm25HourlyNotice = ref('')
+const pm25HourlyLoaded = ref(false)
+const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
 const selectedHeatmapMetric = ref('pm2_5')
 const airQualityRows = ref([
   { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
@@ -425,6 +463,7 @@ const TREND_CACHE_PREFIX = 'airQualityTrendCache:'
 const HISTORICAL_WEATHER_CACHE_PREFIX = 'historicalWeatherCache:'
 const HISTORICAL_WEATHER_TREND_CACHE_PREFIX = 'historicalWeatherTrendCache:'
 const HEATMAP_CACHE_PREFIX = 'airHeatmapCache:v2:'
+const PM25_HOURLY_CACHE_PREFIX = 'pm25HourlyTrendCache:v1:'
 const HISTORICAL_WEATHER_ENDPOINT =
   'https://lookuphistoricalweather-lz6cdeni5a-uc.a.run.app'
 const HISTORICAL_DAYS = 30
@@ -440,6 +479,8 @@ const getHistoricalWeatherTrendCacheKey = (suburbQuery, state) =>
   `${HISTORICAL_WEATHER_TREND_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 const getHeatmapCacheKey = (suburbQuery, state) =>
   `${HEATMAP_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
+const getPm25HourlyCacheKey = (suburbQuery, state) =>
+  `${PM25_HOURLY_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 
 const readCache = (cacheKey) => {
   let raw
@@ -886,6 +927,18 @@ const formatDateLabel = (dateValue) => {
   return `${day} ${monthLabel}`
 }
 
+// Format ISO hour values into compact labels for short-range charts.
+const formatHourLabel = (dateValue) => {
+  if (typeof dateValue !== 'string') {
+    return ''
+  }
+  const parsed = new Date(dateValue)
+  if (Number.isNaN(parsed.getTime())) {
+    return dateValue
+  }
+  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 // Build daily averages from hourly air quality data.
 const buildTrendSeries = (payload) => {
   const fallback = { labels: [], series: {}, units: {} }
@@ -961,6 +1014,68 @@ const buildTrendSeries = (payload) => {
   })
 
   return { labels, series, units }
+}
+
+// Build a PM2.5 series split into last 12 historical hours and next 12 forecast hours.
+const buildPm25HourlySeries = (payload) => {
+  const fallback = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+
+  const hourly = payload.hourly || {}
+  const hourlyUnits = payload.hourly_units || {}
+  const timeList = Array.isArray(hourly.time) ? hourly.time : []
+  const values = Array.isArray(hourly.pm2_5) ? hourly.pm2_5 : []
+  if (!timeList.length || !values.length) {
+    return fallback
+  }
+
+  const entries = []
+  timeList.forEach((timeValue, index) => {
+    const parsed = new Date(timeValue)
+    if (Number.isNaN(parsed.getTime())) {
+      return
+    }
+    const numericValue = Number(values[index])
+    entries.push({
+      index,
+      timeValue,
+      timestamp: parsed.getTime(),
+      value: Number.isFinite(numericValue) ? Number(numericValue.toFixed(2)) : null,
+    })
+  })
+
+  if (!entries.length) {
+    return fallback
+  }
+
+  const now = Date.now()
+  let anchorPosition = 0
+  let minDistance = Number.POSITIVE_INFINITY
+
+  entries.forEach((entry, entryIndex) => {
+    const distance = Math.abs(entry.timestamp - now)
+    if (distance < minDistance) {
+      minDistance = distance
+      anchorPosition = entryIndex
+    }
+  })
+
+  const historicalEntries = entries.slice(Math.max(0, anchorPosition - 11), anchorPosition + 1)
+  const forecastEntries = entries.slice(anchorPosition + 1, anchorPosition + 13)
+  const combinedEntries = [...historicalEntries, ...forecastEntries]
+
+  return {
+    labels: combinedEntries.map((entry) => formatHourLabel(entry.timeValue)),
+    historical: combinedEntries.map((entry, index) =>
+      index < historicalEntries.length ? entry.value : null,
+    ),
+    forecast: combinedEntries.map((entry, index) =>
+      index >= historicalEntries.length ? entry.value : null,
+    ),
+    unit: hourlyUnits.pm2_5 || 'ug/m3',
+  }
 }
 
 const normalizeSeedValue = (value) =>
@@ -1467,6 +1582,81 @@ const loadAirQualityTrend = async () => {
   }
 }
 
+// Fetch and cache PM2.5 hourly history (last 12h) and forecast (next 12h) using suburb coordinates.
+const loadPm25HourlyTrend = async () => {
+  const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
+  const state = typeof route.query.state === 'string' ? route.query.state : ''
+  const suburbQuery = slugToQuery(rawSlug)
+
+  pm25HourlyError.value = ''
+  pm25HourlyNotice.value = ''
+
+  if (!suburbQuery || !state) {
+    pm25HourlyError.value = 'Missing suburb or state. Please search again.'
+    pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+    return
+  }
+
+  if (!lgaCoordinates.value) {
+    if (!lgaLoading.value) {
+      pm25HourlyError.value = 'No coordinate data available for this suburb.'
+    }
+    return
+  }
+
+  const cacheKey = getPm25HourlyCacheKey(suburbQuery, state)
+  const cachedData = readCache(cacheKey)
+  if (cachedData) {
+    pm25HourlySeries.value = cachedData
+    pm25HourlyLoaded.value = true
+    return
+  }
+  const staleCache = readCacheEntry(cacheKey)
+
+  pm25HourlyLoading.value = true
+
+  try {
+    const hourlyUrl = new URL('https://air-quality-api.open-meteo.com/v1/air-quality')
+    hourlyUrl.searchParams.set('latitude', lgaCoordinates.value.lat.toFixed(5))
+    hourlyUrl.searchParams.set('longitude', lgaCoordinates.value.lon.toFixed(5))
+    hourlyUrl.searchParams.set('hourly', 'pm2_5')
+    hourlyUrl.searchParams.set('past_days', '1')
+    hourlyUrl.searchParams.set('forecast_days', '1')
+    hourlyUrl.searchParams.set('timezone', 'auto')
+
+    const response = await fetch(hourlyUrl)
+    if (!response.ok) {
+      const message = await getApiErrorMessage(response, 'Failed to fetch hourly PM2.5 data.')
+      throw new Error(message)
+    }
+
+    const payload = await response.json()
+    const data = payload.data || payload
+    const series = buildPm25HourlySeries(data)
+    pm25HourlySeries.value = series
+    writeCache(cacheKey, series)
+    pm25HourlyLoaded.value = true
+  } catch (error) {
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= CACHE_STALE_MS) {
+      pm25HourlySeries.value = staleCache.data
+      pm25HourlyLoaded.value = true
+      pm25HourlyNotice.value = buildStaleNotice(staleCache.fetchedAt)
+    } else {
+      pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+      pm25HourlyError.value = error instanceof Error ? error.message : 'Unexpected error.'
+    }
+  } finally {
+    pm25HourlyLoading.value = false
+  }
+}
+
+const resetPm25HourlyState = () => {
+  pm25HourlyLoaded.value = false
+  pm25HourlyError.value = ''
+  pm25HourlyNotice.value = ''
+  pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+}
+
 const loadHistoricalWeather = async () => {
   const rawSlug = typeof route.params.suburb === 'string' ? route.params.suburb : ''
   const state = typeof route.query.state === 'string' ? route.query.state : ''
@@ -1666,6 +1856,69 @@ const handleSubscriptionToggle = async () => {
   }
 }
 
+const pm25HourlyChartData = computed(() => ({
+  labels: pm25HourlySeries.value.labels,
+  datasets: [
+    {
+      label: `Historical PM2.5 (${pm25HourlySeries.value.unit})`,
+      data: pm25HourlySeries.value.historical,
+      fill: false,
+      tension: 0.25,
+      borderColor: '#0f766e',
+      backgroundColor: '#0f766e',
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      spanGaps: false,
+    },
+    {
+      label: `Forecast PM2.5 (${pm25HourlySeries.value.unit})`,
+      data: pm25HourlySeries.value.forecast,
+      fill: false,
+      tension: 0.25,
+      borderColor: '#f97316',
+      backgroundColor: '#f97316',
+      borderDash: [6, 4],
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      spanGaps: false,
+    },
+  ],
+}))
+
+const pm25HourlyChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      labels: {
+        color: '#334155',
+      },
+    },
+  },
+  scales: {
+    x: {
+      ticks: {
+        color: '#64748b',
+        maxTicksLimit: 12,
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+    y: {
+      ticks: {
+        color: '#64748b',
+      },
+      grid: {
+        color: '#e2e8f0',
+      },
+    },
+  },
+}))
+
 const trendChartData = computed(() => {
   const series = trendSeries.value.series || {}
   const labels = (trendSeries.value.labels || []).map(formatDateLabel)
@@ -1794,6 +2047,7 @@ watch(
     loadHistoricalWeatherTrend()
     loadLga()
     resetHeatmapState()
+    resetPm25HourlyState()
     maybeLoadHeatmap()
   },
 )
@@ -1806,6 +2060,9 @@ watch(
 watch(
   () => activeAirSubtab.value,
   (value) => {
+    if (value === 'recommendations' && !pm25HourlyLoaded.value && !pm25HourlyLoading.value) {
+      loadPm25HourlyTrend()
+    }
     if (value === 'trend' && !trendLoaded.value && !trendLoading.value) {
       loadAirQualityTrend()
     }
@@ -1827,6 +2084,9 @@ watch(
 watch(
   () => lgaCoordinates.value,
   (coords) => {
+    if (coords && activeAirSubtab.value === 'recommendations' && !pm25HourlyLoaded.value) {
+      loadPm25HourlyTrend()
+    }
     if (!coords || activeAirSubtab.value !== 'summary') {
       return
     }
