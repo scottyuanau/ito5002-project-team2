@@ -404,7 +404,12 @@ const getHeatmapCacheKey = (suburbQuery, state) =>
   `${HEATMAP_CACHE_PREFIX}${suburbQuery.toLowerCase()}|${state.toUpperCase()}`
 
 const readCache = (cacheKey) => {
-  const raw = localStorage.getItem(cacheKey)
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
   if (!raw) {
     return null
   }
@@ -421,14 +426,23 @@ const readCache = (cacheKey) => {
     }
     return parsed.data
   } catch {
-    localStorage.removeItem(cacheKey)
+    try {
+      localStorage.removeItem(cacheKey)
+    } catch {
+      // Ignore storage failures in restricted browser modes.
+    }
     return null
   }
 }
 
 // Read cached entries with a custom TTL for heatmap data.
 const readCacheWithTtl = (cacheKey, ttlMs) => {
-  const raw = localStorage.getItem(cacheKey)
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
   if (!raw) {
     return null
   }
@@ -445,14 +459,23 @@ const readCacheWithTtl = (cacheKey, ttlMs) => {
     }
     return parsed.data
   } catch {
-    localStorage.removeItem(cacheKey)
+    try {
+      localStorage.removeItem(cacheKey)
+    } catch {
+      // Ignore storage failures in restricted browser modes.
+    }
     return null
   }
 }
 
 // Read cached entries without enforcing a TTL (used for stale fallback messaging).
 const readCacheEntry = (cacheKey) => {
-  const raw = localStorage.getItem(cacheKey)
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
   if (!raw) {
     return null
   }
@@ -472,7 +495,11 @@ const readCacheEntry = (cacheKey) => {
 
 const writeCache = (cacheKey, data) => {
   const payload = JSON.stringify({ fetchedAt: Date.now(), data })
-  localStorage.setItem(cacheKey, payload)
+  try {
+    localStorage.setItem(cacheKey, payload)
+  } catch {
+    // Some browsers (Safari private mode) throw QuotaExceededError; skip caching.
+  }
 }
 
 const formatFetchedAt = (timestamp) => {
