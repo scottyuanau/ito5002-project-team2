@@ -1,150 +1,150 @@
 <template>
-  <div class="flex w-full flex-col gap-20">
-    <section class="mx-auto flex w-full max-w-5xl px-6">
-      <div class="w-full text-left">
-        <p class="text-sm font-medium text-slate-500">Welcome back</p>
-        <h1 class="mt-1 text-3xl font-semibold text-slate-900">{{ greetingMessage }}</h1>
-        <p class="mt-2 text-sm text-slate-600">Let&apos;s find out the air quality today.</p>
-      </div>
-    </section>
-
-    <!-- Today in your area -->
-    <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
-      <div class="space-y-2 text-center">
-        <h2 class="text-3xl font-semibold text-slate-900">
-          Today in {{ locationLabel }}
-        </h2>
-        <p class="text-sm text-slate-500">
-          Live PM2.5 readings and safety guidance based on your current location.
-        </p>
-      </div>
-      <p v-if="locationError || airQualityError" class="text-sm text-red-600">
-        {{ locationError || airQualityError }}
-      </p>
-      <p v-else-if="locationLoading || airQualityLoading" class="text-sm text-slate-500">
-        Loading local air quality...
-      </p>
-      <p v-if="airQualityNotice" class="text-sm text-amber-700">
-        {{ airQualityNotice }}
-      </p>
-      <Pm25RecommendationsPanel
-        v-if="!locationError && !airQualityError"
-        layout="split"
-        :title="`Today in ${locationLabel}`"
-        :current-value="pm25CurrentValue"
-        :trend-values="pm25TrendValues"
-        :unit="pm25Unit"
-      />
-      <div
-        v-if="!locationError && !airQualityError"
-        class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
-      >
-        <div>
-          <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
-          <p class="text-xs text-slate-500">Last 12 hours and forecast for next 12 hours.</p>
+  <div class="home-page">
+    <div class="home-content flex w-full flex-col gap-12">
+      <section class="glass-section mx-auto flex w-full max-w-5xl px-6">
+        <div class="w-full text-left">
+          <p class="text-sm font-medium text-slate-500">Welcome back</p>
+          <h1 class="mt-1 text-3xl font-semibold text-slate-900">{{ greetingMessage }}</h1>
+          <p class="mt-2 text-sm text-slate-600">Let&apos;s find out the air quality today.</p>
         </div>
-        <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
-        <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
-          Loading hourly PM2.5 data...
+      </section>
+
+      <!-- Today in your area -->
+      <section class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
+        <div class="space-y-2 text-center">
+          <h2 class="text-3xl font-semibold text-slate-900">Today in {{ locationLabel }}</h2>
+          <p class="text-sm text-slate-500">
+            Live PM2.5 readings and safety guidance based on your current location.
+          </p>
+        </div>
+        <p v-if="locationError || airQualityError" class="text-sm text-red-600">
+          {{ locationError || airQualityError }}
         </p>
-        <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">{{ pm25HourlyNotice }}</p>
-        <p
-          v-if="!pm25HourlyLoading && !pm25HourlyError && !pm25HourlyChartData.labels.length"
-          class="text-sm text-slate-500"
+        <p v-else-if="locationLoading || airQualityLoading" class="text-sm text-slate-500">
+          Loading local air quality...
+        </p>
+        <p v-if="airQualityNotice" class="text-sm text-amber-700">
+          {{ airQualityNotice }}
+        </p>
+        <Pm25RecommendationsPanel
+          v-if="!locationError && !airQualityError"
+          layout="split"
+          :title="`Today in ${locationLabel}`"
+          :current-value="pm25CurrentValue"
+          :trend-values="pm25TrendValues"
+          :unit="pm25Unit"
+        />
+        <div
+          v-if="!locationError && !airQualityError"
+          class="glass-surface space-y-3 rounded-2xl p-4"
         >
-          No hourly PM2.5 data available right now.
-        </p>
-        <div v-else class="h-72 w-full">
-          <Chart
-            type="line"
-            :data="pm25HourlyChartData"
-            :options="pm25HourlyChartOptions"
-            class="h-full w-full"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- Daily air-friendly habit card -->
-    <section class="mx-auto flex w-full max-w-3xl px-6">
-      <div
-        class="w-full rounded-2xl border border-emerald-100 bg-emerald-50/70 p-6 text-left shadow-sm"
-      >
-        <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
-          Daily air-friendly habit
-        </p>
-        <h3 class="mt-3 text-lg font-semibold text-slate-900">
-          {{ todaysTip.title }}
-        </h3>
-        <p class="mt-2 text-sm text-slate-700">
-          {{ todaysTip.description }}
-        </p>
-        <p class="mt-3 text-xs text-slate-500">
-          Small choices at home add up to cleaner air for your street and city.
-        </p>
-      </div>
-    </section>
-
-    <!-- Find a suburb -->
-    <section class="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 self-start px-6">
-      <div class="space-y-2 text-center">
-        <h2 class="text-3xl font-semibold text-slate-900">Find a suburb</h2>
-        <p class="text-sm text-slate-500">Search Australian suburbs by name and state.</p>
-      </div>
-      <form class="flex w-full flex-col gap-3 sm:flex-row" @submit.prevent="handleSearch">
-        <InputText
-          v-model="suburb"
-          class="w-full"
-          placeholder="Enter suburb name"
-          aria-label="Suburb name"
-        />
-        <Dropdown
-          v-model="selectedState"
-          :options="states"
-          class="w-full sm:w-40"
-          placeholder="State"
-          aria-label="State"
-        />
-        <Button type="submit" label="Search" class="w-full sm:w-auto" :disabled="!canSearch" />
-      </form>
-    </section>
-
-    <!-- Popular cities -->
-    <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
-      <div class="space-y-2 text-center">
-        <h2 class="text-3xl font-semibold text-slate-900">Popular Cities</h2>
-        <p class="text-sm text-slate-500">Jump straight to popular suburb highlights.</p>
-      </div>
-      <Carousel
-        :value="popularSuburbs"
-        :numVisible="3"
-        :numScroll="1"
-        :responsiveOptions="carouselBreakpoints"
-        class="w-full"
-      >
-        <template #item="{ data }">
-          <div
-            class="mx-3 flex h-full cursor-pointer flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
-            role="button"
-            tabindex="0"
-            @click="navigateToSuburb(data)"
-            @keydown.enter="navigateToSuburb(data)"
-          >
-            <span class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500">
-              {{ data.state }}
-            </span>
-            <div class="space-y-1">
-              <h3 class="text-xl font-semibold text-slate-900">{{ data.title }}</h3>
-              <p class="text-sm text-slate-500">{{ data.subtitle }}</p>
-            </div>
-            <span class="text-sm font-semibold text-emerald-600">
-              Explore suburb
-              <i class="pi pi-arrow-right ml-1 text-xs"></i>
-            </span>
+          <div>
+            <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
+            <p class="text-xs text-slate-500">Last 12 hours and forecast for next 12 hours.</p>
           </div>
-        </template>
-      </Carousel>
-    </section>
+          <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
+          <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
+            Loading hourly PM2.5 data...
+          </p>
+          <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">{{ pm25HourlyNotice }}</p>
+          <p
+            v-if="!pm25HourlyLoading && !pm25HourlyError && !pm25HourlyChartData.labels.length"
+            class="text-sm text-slate-500"
+          >
+            No hourly PM2.5 data available right now.
+          </p>
+          <div v-else class="h-72 w-full">
+            <Chart
+              type="line"
+              :data="pm25HourlyChartData"
+              :options="pm25HourlyChartOptions"
+              class="h-full w-full"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Daily air-friendly habit card -->
+      <section class="glass-section mx-auto flex w-full max-w-3xl px-6">
+        <div class="glass-surface w-full rounded-2xl p-6 text-left">
+          <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
+            Daily air-friendly habit
+          </p>
+          <h3 class="mt-3 text-lg font-semibold text-slate-900">
+            {{ todaysTip.title }}
+          </h3>
+          <p class="mt-2 text-sm text-slate-700">
+            {{ todaysTip.description }}
+          </p>
+          <p class="mt-3 text-xs text-slate-500">
+            Small choices at home add up to cleaner air for your street and city.
+          </p>
+        </div>
+      </section>
+
+      <!-- Find a suburb -->
+      <section
+        class="glass-section mx-auto flex w-full max-w-3xl flex-col items-center gap-6 self-start px-6"
+      >
+        <div class="space-y-2 text-center">
+          <h2 class="text-3xl font-semibold text-slate-900">Find a suburb</h2>
+          <p class="text-sm text-slate-500">Search Australian suburbs by name and state.</p>
+        </div>
+        <form class="flex w-full flex-col gap-3 sm:flex-row" @submit.prevent="handleSearch">
+          <InputText
+            v-model="suburb"
+            class="w-full"
+            placeholder="Enter suburb name"
+            aria-label="Suburb name"
+          />
+          <Dropdown
+            v-model="selectedState"
+            :options="states"
+            class="w-full sm:w-40"
+            placeholder="State"
+            aria-label="State"
+          />
+          <Button type="submit" label="Search" class="w-full sm:w-auto" :disabled="!canSearch" />
+        </form>
+      </section>
+
+      <!-- Popular cities -->
+      <section class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
+        <div class="space-y-2 text-center">
+          <h2 class="text-3xl font-semibold text-slate-900">Popular Cities</h2>
+          <p class="text-sm text-slate-500">Jump straight to popular suburb highlights.</p>
+        </div>
+        <Carousel
+          :value="popularSuburbs"
+          :numVisible="3"
+          :numScroll="1"
+          :responsiveOptions="carouselBreakpoints"
+          class="w-full"
+        >
+          <template #item="{ data }">
+            <div
+              class="glass-surface mx-3 flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-6 transition hover:-translate-y-1 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              role="button"
+              tabindex="0"
+              @click="navigateToSuburb(data)"
+              @keydown.enter="navigateToSuburb(data)"
+            >
+              <span class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500">
+                {{ data.state }}
+              </span>
+              <div class="space-y-1">
+                <h3 class="text-xl font-semibold text-slate-900">{{ data.title }}</h3>
+                <p class="text-sm text-slate-500">{{ data.subtitle }}</p>
+              </div>
+              <span class="text-sm font-semibold text-emerald-600">
+                Explore suburb
+                <i class="pi pi-arrow-right ml-1 text-xs"></i>
+              </span>
+            </div>
+          </template>
+        </Carousel>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -648,10 +648,7 @@ const loadAirQualityByCoords = async ({ lat, lon, cacheKey }) => {
 
   const response = await fetch(airUrl)
   if (!response.ok) {
-    const message = await getApiErrorMessage(
-      response,
-      'Failed to fetch local air quality data.',
-    )
+    const message = await getApiErrorMessage(response, 'Failed to fetch local air quality data.')
     if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
       applyAirQualityPayload(staleCache.data)
       airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
@@ -733,10 +730,7 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
 
   const response = await fetch(airUrl)
   if (!response.ok) {
-    const message = await getApiErrorMessage(
-      response,
-      'Failed to fetch local air quality data.',
-    )
+    const message = await getApiErrorMessage(response, 'Failed to fetch local air quality data.')
     if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
       applyAirQualityPayload(staleCache.data)
       airQualityNotice.value = buildStaleNotice(staleCache.fetchedAt)
@@ -778,9 +772,7 @@ const loadLocalAirQuality = async () => {
       })
     } catch (fallbackError) {
       airQualityError.value =
-        fallbackError instanceof Error
-          ? fallbackError.message
-          : 'Unable to load local air quality.'
+        fallbackError instanceof Error ? fallbackError.message : 'Unable to load local air quality.'
     } finally {
       airQualityLoading.value = false
     }
@@ -854,3 +846,60 @@ const navigateToSuburb = (item) => {
 
 onMounted(loadLocalAirQuality)
 </script>
+
+<style scoped>
+.home-page {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+  padding: 1.5rem 0 2.5rem;
+}
+
+.home-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.home-page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(248 250 252 / 38%) 0%,
+    rgb(226 232 240 / 48%) 55%,
+    rgb(241 245 249 / 58%) 100%
+  );
+}
+
+.home-content {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-section {
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 1.5rem;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+  background: rgb(255 255 255 / 22%);
+  box-shadow: 0 18px 38px rgb(15 23 42 / 18%);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.glass-surface {
+  border: 1px solid rgb(255 255 255 / 65%);
+  background: rgb(255 255 255 / 28%);
+  box-shadow: 0 14px 28px rgb(15 23 42 / 14%);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+</style>
