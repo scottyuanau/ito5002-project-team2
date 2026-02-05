@@ -400,8 +400,8 @@ watch(
     :pt="{
       root: { class: 'w-full rounded-full border-none bg-transparent flex items-center gap-3' },
       start: { class: 'flex items-center' },
-      rootList: { class: 'ml-auto flex items-center gap-2' },
-      end: { class: 'flex items-center' },
+      rootList: { class: 'order-3 flex items-center gap-2 md:order-2' },
+      end: { class: 'order-2 ml-auto flex items-center' },
       submenu: { class: 'rounded-2xl border border-black/10 bg-white shadow-lg' },
       item: { class: 'rounded-full' },
       action: {
@@ -505,3 +505,24 @@ watch(
     </div>
   </Dialog>
 </template>
+
+<style scoped>
+@media (max-width: 767px) {
+  :deep(.p-megamenu-root) {
+    display: flex;
+    align-items: center;
+  }
+
+  :deep(.p-megamenu-end) {
+    order: 2;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+
+  :deep(.p-megamenu-button) {
+    order: 3;
+    margin-left: 0.5rem;
+  }
+}
+</style>
