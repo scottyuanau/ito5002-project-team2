@@ -253,7 +253,10 @@ const pm25Recommendations = computed(() => {
   if (tier === 'Good') {
     return [
       { emoji: '🟢', text: 'Air quality is generally safe' },
-      { emoji: '🏃', text: 'Outdoor activity is fine for most people' },
+      {
+        emoji: '🏃',
+        text: 'Outdoor activity is fine for most people (e.g. people with no pre-existing medical condition)',
+      },
       ...base,
     ]
   }
