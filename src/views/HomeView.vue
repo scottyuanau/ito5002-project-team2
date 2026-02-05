@@ -66,7 +66,7 @@
       </section>
 
       <!-- Daily air-friendly habit card -->
-      <section class="glass-section mx-auto flex w-full max-w-3xl px-6">
+      <section class="glass-section mx-auto flex w-full max-w-5xl px-6">
         <div class="glass-surface w-full rounded-2xl p-6 text-left">
           <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
             Daily air-friendly habit
@@ -85,7 +85,7 @@
 
       <!-- Find a suburb -->
       <section
-        class="glass-section mx-auto flex w-full max-w-3xl flex-col items-center gap-6 self-start px-6"
+        class="glass-section mx-auto flex w-full max-w-5xl flex-col items-center gap-6 self-start px-6"
       >
         <div class="space-y-2 text-center">
           <h2 class="text-3xl font-semibold text-slate-900">Find a suburb</h2>
