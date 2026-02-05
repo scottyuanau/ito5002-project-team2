@@ -17,7 +17,7 @@
       <ul class="mt-3 space-y-2 text-sm text-slate-600">
         <li class="flex items-start gap-2">
           <span>{{ pm25Tier.emoji }}</span>
-          <span>PM2.5 is {{ pm25Tier.label }} right now</span>
+          <span>Air quality looks {{ pm25Tier.label.toLowerCase() }} right now</span>
         </li>
         <li class="flex items-start gap-2">
           <span>📍</span>
