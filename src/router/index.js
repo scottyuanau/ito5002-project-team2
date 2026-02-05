@@ -9,6 +9,7 @@ import CompareView from '../views/CompareView.vue'
 import ContactView from '../views/ContactView.vue'
 import PlantTipsView from '../views/PlantTipsView.vue' // 👈 make sure this path exists
 import KnowledgeView from '../views/KnowledgeView.vue'
+import NotFoundView from '../views/NotFoundView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -62,6 +63,11 @@ const router = createRouter({
       path: '/suburb/:suburb',
       name: 'suburb',
       component: SuburbView,
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: NotFoundView,
     },
   ],
 })
