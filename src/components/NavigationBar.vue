@@ -416,7 +416,7 @@ watch(
         to="/"
         class="flex items-center gap-2 px-3 py-2 text-sm font-semibold uppercase tracking-[0.2em] text-slate-900"
       >
-        <img src="/logo.png" alt="AirScape logo" class="h-6 w-6" />
+        <img src="/logo.png" alt="AirScape logo" class="h-8 w-8" />
         <span>AirScape</span>
       </RouterLink>
     </template>
