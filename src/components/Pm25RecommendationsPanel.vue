@@ -1,6 +1,6 @@
 <template>
   <div :class="layoutClasses">
-    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p class="text-sm font-medium text-slate-900">PM2.5 gauge</p>
@@ -12,7 +12,7 @@
         <div ref="pm25GaugeContainer" class="h-full w-full"></div>
       </div>
     </div>
-    <div class="rounded-2xl border border-slate-200 bg-white p-4">
+    <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
       <p class="text-sm font-medium text-slate-900">{{ title }}</p>
       <ul class="mt-3 space-y-2 text-sm text-slate-600">
         <li class="flex items-start gap-2">
@@ -83,8 +83,8 @@ const pm25GaugeChart = ref(null)
 
 const layoutClasses = computed(() =>
   props.layout === 'split'
-    ? 'grid gap-4 lg:grid-cols-2'
-    : 'flex flex-col gap-4',
+    ? 'grid w-full max-w-full min-w-0 gap-4 lg:grid-cols-2'
+    : 'flex w-full max-w-full min-w-0 flex-col gap-4',
 )
 
 const formatStatValue = (value) => {

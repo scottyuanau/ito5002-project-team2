@@ -1,5 +1,5 @@
 <template>
-  <section class="mx-auto w-full max-w-3xl space-y-6 text-left">
+  <section class="mx-auto w-full max-w-3xl space-y-6 px-4 text-left sm:px-6">
     <header class="space-y-2">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Contact</p>
       <h1 class="text-3xl font-semibold text-slate-900">Send us an enquiry</h1>

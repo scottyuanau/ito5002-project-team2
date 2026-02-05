@@ -1,5 +1,5 @@
 <template>
-  <section class="w-full max-w-6xl self-start space-y-8 py-6 text-left">
+  <section class="w-full max-w-6xl self-start space-y-8 px-4 py-6 text-left sm:px-6">
     <header class="space-y-2">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Compare</p>
       <h1 class="text-3xl font-semibold text-slate-900">Compare suburb metrics</h1>

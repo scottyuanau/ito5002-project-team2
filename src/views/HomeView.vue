@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <div class="home-content flex w-full flex-col gap-12">
+    <div class="home-content flex w-full flex-col gap-12 px-4 sm:px-6">
       <section class="glass-section mx-auto flex w-full max-w-5xl px-6">
         <div class="w-full text-left">
           <p class="text-sm font-medium text-slate-500">Welcome back</p>
@@ -28,6 +28,7 @@
         </p>
         <Pm25RecommendationsPanel
           v-if="!locationError && !airQualityError"
+          class="w-full min-w-0"
           layout="split"
           :title="`Today in ${locationLabel}`"
           :current-value="pm25CurrentValue"
@@ -850,6 +851,7 @@ onMounted(loadLocalAirQuality)
 <style scoped>
 .home-page {
   position: relative;
+  isolation: isolate;
   width: 100%;
   min-height: 100%;
   padding: 1.5rem 0 2.5rem;
@@ -859,7 +861,8 @@ onMounted(loadLocalAirQuality)
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image: url('/bg.jpg');
   background-size: cover;
   background-position: center;
@@ -870,7 +873,8 @@ onMounted(loadLocalAirQuality)
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
+  pointer-events: none;
   background: linear-gradient(
     180deg,
     rgb(248 250 252 / 38%) 0%,

@@ -1,5 +1,5 @@
 <template>
-  <section class="w-full max-w-5xl space-y-8 text-left">
+  <section class="w-full max-w-5xl space-y-8 px-4 text-left sm:px-6">
     <header class="space-y-2">
       <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Suburb</p>
       <h1 class="text-3xl font-semibold text-slate-900">{{ suburbName }}</h1>

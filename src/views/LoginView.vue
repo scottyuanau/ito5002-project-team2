@@ -78,7 +78,7 @@ const onGoogleLogin = async () => {
 </script>
 
 <template>
-  <section class="mx-auto w-full max-w-lg">
+  <section class="mx-auto w-full max-w-lg px-4 sm:px-6">
     <div class="rounded-3xl border border-black/10 bg-white/90 p-8 shadow-2xl backdrop-blur">
       <header class="space-y-2 text-left">
         <h1 class="text-3xl font-semibold text-slate-900">Welcome back</h1>
