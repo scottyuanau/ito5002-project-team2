@@ -139,6 +139,9 @@
                 <h3 class="text-xl font-semibold text-slate-900">{{ data.title }}</h3>
                 <p class="text-sm text-slate-500">{{ data.subtitle }}</p>
               </div>
+              <div class="flex justify-center">
+                <Pm25MiniGauge :current-value="getPopularSuburbPm25Value(data)" unit="ug/m3" />
+              </div>
               <span class="text-sm font-semibold text-emerald-600">
                 Explore suburb
                 <i class="pi pi-arrow-right ml-1 text-xs"></i>
@@ -169,6 +172,7 @@ import Carousel from 'primevue/carousel'
 import Chart from 'primevue/chart'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
+import Pm25MiniGauge from '../components/Pm25MiniGauge.vue'
 import Pm25RecommendationsPanel from '../components/Pm25RecommendationsPanel.vue'
 import { useAuthStore } from '../stores/auth'
 
@@ -203,12 +207,14 @@ const pm25HourlyError = ref('')
 const pm25HourlyNotice = ref('')
 const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
 const showScrollCue = ref(true)
+const popularSuburbPm25 = ref({})
 
 const HOME_CACHE_TTL_MS = 60 * 60 * 1000
 const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
 const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 const HOME_PM25_HOURLY_CACHE_PREFIX = 'homePm25HourlyCache:v1:'
+const HOME_POPULAR_PM25_CACHE_PREFIX = 'homePopularPm25Cache:v1:'
 
 const greetingName = computed(() => {
   const raw = (authStore.displayName || '').trim()
@@ -541,6 +547,13 @@ const applyAirQualityPayload = (payload) => {
   pm25CurrentValue.value = extractCurrentPm25(payload)
 }
 
+const getPopularSuburbKey = (item) => `${item.slug}|${item.state}`
+
+const getPopularSuburbPm25Value = (item) => {
+  const value = popularSuburbPm25.value[getPopularSuburbKey(item)]
+  return Number.isFinite(value) ? Number(value.toFixed(2)) : null
+}
+
 const pm25HourlyChartData = computed(() => ({
   labels: pm25HourlySeries.value.labels,
   datasets: [
@@ -758,6 +771,63 @@ const loadAirQualityBySuburb = async ({ suburbName, state, cacheKey }) => {
   applyAirQualityPayload(data)
 }
 
+// Fetch a city-level PM2.5 value for the popular-cities cards with cache fallback.
+const fetchPopularSuburbPm25 = async ({ suburbName, state, cacheKey }) => {
+  const cachedAirQuality = readCacheWithTtl(cacheKey, HOME_CACHE_TTL_MS)
+  if (cachedAirQuality) {
+    return extractCurrentPm25(cachedAirQuality)
+  }
+  const staleCache = readCacheEntry(cacheKey)
+  const airQualityUrl = getAirQualityUrl()
+  if (!airQualityUrl) {
+    throw new Error('Missing Firebase Functions base URL configuration.')
+  }
+
+  const airUrl = new URL(airQualityUrl)
+  airUrl.searchParams.set('suburb', suburbName)
+  airUrl.searchParams.set('state', state)
+  airUrl.searchParams.set('current', 'pm2_5')
+  airUrl.searchParams.set('hourly', 'pm2_5')
+  airUrl.searchParams.set('timezone', 'auto')
+
+  const response = await fetch(airUrl)
+  if (!response.ok) {
+    if (staleCache?.data && Date.now() - staleCache.fetchedAt <= HOME_CACHE_STALE_MS) {
+      return extractCurrentPm25(staleCache.data)
+    }
+    const message = await getApiErrorMessage(response, `Failed to fetch PM2.5 data for ${suburbName}.`)
+    throw new Error(message)
+  }
+  const payload = await response.json()
+  const data = payload.data || payload
+  writeCache(cacheKey, data)
+  return extractCurrentPm25(data)
+}
+
+// Load PM2.5 values for all popular city cards shown on the home carousel.
+const loadPopularSuburbPm25 = async () => {
+  const entries = await Promise.all(
+    popularSuburbs.map(async (item) => {
+      const cacheKey = `${HOME_POPULAR_PM25_CACHE_PREFIX}${item.slug}|${item.state}`
+      try {
+        const value = await fetchPopularSuburbPm25({
+          suburbName: item.title,
+          state: item.state,
+          cacheKey,
+        })
+        return [getPopularSuburbKey(item), value]
+      } catch {
+        return [getPopularSuburbKey(item), null]
+      }
+    }),
+  )
+
+  popularSuburbPm25.value = entries.reduce((acc, [key, value]) => {
+    acc[key] = value
+    return acc
+  }, {})
+}
+
 const loadLocalAirQuality = async () => {
   locationError.value = ''
   airQualityError.value = ''
@@ -878,6 +948,7 @@ const handleInitialScroll = () => {
 
 onMounted(() => {
   loadLocalAirQuality()
+  loadPopularSuburbPm25()
   window.addEventListener('scroll', handleInitialScroll, { passive: true })
 })
 
