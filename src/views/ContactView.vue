@@ -93,13 +93,58 @@ const errors = ref({})
 const NAME_MAX_LENGTH = 50
 const TITLE_MAX_WORDS = 30
 const MESSAGE_MAX_WORDS = 200
+const MAILGUN_DOMAIN = 'breezevalleycafe.com.au'
+const MAILGUN_FROM = `AirScape Support <postmaster@${MAILGUN_DOMAIN}>`
+const MAILGUN_ENDPOINT = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
 
 const isDbReady = computed(() => Boolean(db))
+const getMailgunApiKey = () => (import.meta.env.VITE_MAILGUN_API || '').trim()
 
 // Count words using whitespace separation after trimming.
 const countWords = (value) => {
   const trimmed = (value || '').trim()
   return trimmed ? trimmed.split(/\s+/).length : 0
+}
+
+// Send a confirmation email after an enquiry is submitted successfully.
+const sendEnquiryConfirmationEmail = async ({ recipientEmail, recipientName, enquiryTitle }) => {
+  const mailgunApiKey = getMailgunApiKey()
+  if (!mailgunApiKey) {
+    return false
+  }
+
+  const auth = btoa(`api:${mailgunApiKey}`)
+  const safeName = (recipientName || 'there').trim() || 'there'
+  const subject = 'We received your enquiry'
+  const body = [
+    `Hi ${safeName},`,
+    '',
+    'Thanks for contacting AirScape.',
+    'Your enquiry has been received successfully.',
+    'Our team will review it and contact you later.',
+    '',
+    `Title: ${enquiryTitle}`,
+    '',
+    'Regards,',
+    'AirScape Team',
+  ].join('\n')
+
+  const payload = new URLSearchParams()
+  payload.set('from', MAILGUN_FROM)
+  payload.set('to', recipientEmail)
+  payload.set('subject', subject)
+  payload.set('text', body)
+
+  const response = await fetch(MAILGUN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: payload,
+  })
+
+  return response.ok
 }
 
 // Pre-fill the email field for authenticated users.
@@ -171,16 +216,27 @@ const handleSubmit = async () => {
 
   isSubmitting.value = true
   try {
+    const trimmedName = name.value.trim()
+    const trimmedEmail = email.value.trim()
+    const trimmedTitle = title.value.trim()
+    const trimmedContent = content.value.trim()
     await addDoc(collection(db, 'enquiries'), {
-      name: name.value.trim(),
-      email: email.value.trim(),
-      title: title.value.trim(),
-      content: content.value.trim(),
+      name: trimmedName,
+      email: trimmedEmail,
+      title: trimmedTitle,
+      content: trimmedContent,
       createdAt: serverTimestamp(),
       userId: authStore.user?.uid ?? null,
       authEmail: authStore.user?.email ?? null,
     })
-    submitSuccess.value = 'Your enquiry has been sent.'
+    const emailSent = await sendEnquiryConfirmationEmail({
+      recipientEmail: trimmedEmail,
+      recipientName: trimmedName,
+      enquiryTitle: trimmedTitle,
+    }).catch(() => false)
+    submitSuccess.value = emailSent
+      ? 'Your enquiry has been sent. A confirmation email has been sent to you.'
+      : 'Your enquiry has been sent. We could not send a confirmation email right now.'
     resetForm()
   } catch (err) {
     submitError.value = err?.message ?? 'Unable to submit your enquiry.'
