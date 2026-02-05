@@ -22,6 +22,9 @@ const primePreset = definePreset(Aura, {})
 app.use(PrimeVue, {
   theme: {
     preset: primePreset,
+    options: {
+      darkModeSelector: 'none',
+    },
   },
 })
 app.directive('tooltip', Tooltip)
