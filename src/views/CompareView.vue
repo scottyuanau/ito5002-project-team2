@@ -304,17 +304,17 @@ const pollutants = [
 ]
 const pollutantDescriptions = {
   pm2_5:
-    'PM2.5: Fine particles from exhaust, smoke and industry that can travel deep into lungs and blood.',
+    'PM2.5: Fine particles from exhaust, smoke and industry that can travel deep into lungs and blood. Direction: lower is better.',
   pm10:
-    'PM10: Larger particles like dust, pollen and smoke that can irritate airways and trigger asthma symptoms.',
+    'PM10: Larger particles like dust, pollen and smoke that can irritate airways and trigger asthma symptoms. Direction: lower is better.',
   carbon_monoxide:
-    'CO: A colorless, odorless gas from incomplete fuel burning that reduces oxygen delivery in the body.',
+    'CO: A colorless, odorless gas from incomplete fuel burning that reduces oxygen delivery in the body. Direction: lower is better.',
   nitrogen_dioxide:
-    'NO2: A traffic-related gas that inflames lungs and worsens asthma and respiratory infections.',
+    'NO2: A traffic-related gas that inflames lungs and worsens asthma and respiratory infections. Direction: lower is better.',
   sulphur_dioxide:
-    'SO2: A gas from fossil fuels and industry that can quickly trigger breathing difficulty and chest tightness.',
+    'SO2: A gas from fossil fuels and industry that can quickly trigger breathing difficulty and chest tightness. Direction: lower is better.',
   ozone:
-    'O3: Ground-level ozone formed in sunlight from emissions; it irritates lungs and makes exercise harder.',
+    'O3: Ground-level ozone formed in sunlight from emissions; it irritates lungs and makes exercise harder. Direction: lower is better.',
 }
 
 const trendMetricOptions = pollutants
@@ -329,14 +329,15 @@ const greenMetrics = [
 ]
 const greenMetricDescriptions = {
   temperature_2m:
-    'Air temperature at 2 meters above ground, a standard reference for local ambient conditions.',
-  rain: 'Rainfall amount accumulated over the measurement interval.',
+    'Air temperature at 2 meters above ground, a standard reference for local ambient conditions. Direction: no fixed higher/lower; moderate ranges are usually best.',
+  rain:
+    'Rainfall amount accumulated over the measurement interval. Direction: generally higher supports greenery, but extremes can still be harmful.',
   vapour_pressure_deficit:
-    'Dryness of the air; higher VPD means air pulls more moisture from soil and plants.',
+    'Dryness of the air; higher VPD means air pulls more moisture from soil and plants. Direction: lower is generally better for plant water stress.',
   soil_temperature_0_to_7cm:
-    'Soil temperature near the surface (0-7 cm), useful for root-zone and germination conditions.',
+    'Soil temperature near the surface (0-7 cm), useful for root-zone and germination conditions. Direction: no fixed higher/lower; moderate ranges are usually best.',
   soil_moisture_0_to_7cm:
-    'Water content in topsoil (0-7 cm), indicating near-surface moisture availability.',
+    'Water content in topsoil (0-7 cm), indicating near-surface moisture availability. Direction: generally higher helps plants, but overly saturated soil can be harmful.',
 }
 
 const canAdd = computed(() => suburbInput.value.trim().length > 0 && selectedState.value)
