@@ -146,11 +146,21 @@
         </Carousel>
       </section>
     </div>
+    <button
+      v-if="showScrollCue"
+      type="button"
+      class="scroll-cue"
+      aria-label="Scroll for more information"
+      @click="scrollToNextSection"
+    >
+      <span>Scroll for more</span>
+      <i class="pi pi-angle-down text-xs"></i>
+    </button>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Carousel from 'primevue/carousel'
@@ -190,6 +200,7 @@ const pm25HourlyLoading = ref(false)
 const pm25HourlyError = ref('')
 const pm25HourlyNotice = ref('')
 const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
+const showScrollCue = ref(true)
 
 const HOME_CACHE_TTL_MS = 60 * 60 * 1000
 const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
@@ -845,7 +856,32 @@ const navigateToSuburb = (item) => {
   })
 }
 
-onMounted(loadLocalAirQuality)
+// Jump to the next section and hide the initial scroll cue.
+const scrollToNextSection = () => {
+  const nextSection = document.querySelector('.home-content section:nth-of-type(2)')
+  if (nextSection) {
+    nextSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } else {
+    window.scrollTo({ top: window.innerHeight * 0.8, behavior: 'smooth' })
+  }
+  showScrollCue.value = false
+}
+
+// Hide the scroll cue as soon as the user starts scrolling.
+const handleInitialScroll = () => {
+  if (window.scrollY > 24) {
+    showScrollCue.value = false
+  }
+}
+
+onMounted(() => {
+  loadLocalAirQuality()
+  window.addEventListener('scroll', handleInitialScroll, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', handleInitialScroll)
+})
 </script>
 
 <style scoped>
@@ -905,5 +941,35 @@ onMounted(loadLocalAirQuality)
   box-shadow: 0 14px 28px rgb(15 23 42 / 14%);
   backdrop-filter: blur(10px) saturate(120%);
   -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+.scroll-cue {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transform: translateX(-50%);
+  border: 1px solid rgb(255 255 255 / 75%);
+  border-radius: 999px;
+  background: rgb(15 23 42 / 68%);
+  color: rgb(255 255 255 / 96%);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 28%);
+  animation: scroll-cue-bounce 1.8s ease-in-out infinite;
+}
+
+@keyframes scroll-cue-bounce {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(4px);
+  }
 }
 </style>
