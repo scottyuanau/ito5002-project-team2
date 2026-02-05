@@ -90,8 +90,17 @@ const isSubmitting = ref(false)
 const submitError = ref('')
 const submitSuccess = ref('')
 const errors = ref({})
+const NAME_MAX_LENGTH = 50
+const TITLE_MAX_WORDS = 30
+const MESSAGE_MAX_WORDS = 200
 
 const isDbReady = computed(() => Boolean(db))
+
+// Count words using whitespace separation after trimming.
+const countWords = (value) => {
+  const trimmed = (value || '').trim()
+  return trimmed ? trimmed.split(/\s+/).length : 0
+}
 
 // Pre-fill the email field for authenticated users.
 watch(
@@ -114,6 +123,8 @@ const validateForm = () => {
 
   if (!trimmedName) {
     nextErrors.name = 'Name is required.'
+  } else if (trimmedName.length > NAME_MAX_LENGTH) {
+    nextErrors.name = `Name must be ${NAME_MAX_LENGTH} characters or fewer.`
   }
   if (!trimmedEmail) {
     nextErrors.email = 'Email is required.'
@@ -122,9 +133,13 @@ const validateForm = () => {
   }
   if (!trimmedTitle) {
     nextErrors.title = 'Title is required.'
+  } else if (countWords(trimmedTitle) > TITLE_MAX_WORDS) {
+    nextErrors.title = `Title must be ${TITLE_MAX_WORDS} words or fewer.`
   }
   if (!trimmedContent) {
     nextErrors.content = 'Message content is required.'
+  } else if (countWords(trimmedContent) > MESSAGE_MAX_WORDS) {
+    nextErrors.content = `Message must be ${MESSAGE_MAX_WORDS} words or fewer.`
   }
 
   errors.value = nextErrors
