@@ -241,7 +241,7 @@
               v-else-if="enquiries.length === 0"
               class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
             >
-              No enquiries have been submitted yet.
+              {{ enquiriesEmptyText }}
             </div>
 
             <div v-else class="space-y-4">
@@ -331,6 +331,15 @@ const emailNotificationDate = ref('')
 let unsubscribeSubscriptions = null
 let notificationIntervalId = null
 const userEmail = computed(() => authStore.user?.email ?? '')
+const ADMIN_EMAIL = 'admin@gmail.com'
+const isAdminUser = computed(
+  () => userEmail.value.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()
+)
+const enquiriesEmptyText = computed(() =>
+  isAdminUser.value
+    ? 'No enquiries have been submitted yet.'
+    : 'You have not submitted any enquiries yet.'
+)
 const NOTIFICATION_LAST_SENT_KEY = 'notifications:lastSent'
 const NOTIFICATION_SEND_COOLDOWN_MS = 60 * 60 * 1000
 const EMAIL_NOTIFICATION_COUNT_KEY = 'notifications:emailCount'
@@ -428,6 +437,14 @@ const formatTimestamp = (value) => {
   }
   return date.toLocaleString()
 }
+
+// Sort enquiry records by newest first, handling Firestore Timestamp and plain values.
+const sortByCreatedAtDesc = (items) =>
+  [...items].sort((a, b) => {
+    const aTime = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0)
+    const bTime = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0)
+    return bTime - aTime
+  })
 
 const MAILGUN_DOMAIN = 'breezevalleycafe.com.au'
 const MAILGUN_FROM = `Mailgun Sandbox <postmaster@${MAILGUN_DOMAIN}>`
@@ -757,14 +774,23 @@ const setupEnquiriesListener = () => {
     enquiriesError.value = 'Firestore is not configured.'
     return
   }
-  const enquiriesQuery = query(collection(db, 'enquiries'), orderBy('createdAt', 'desc'))
+  if (!authStore.user?.uid) {
+    enquiries.value = []
+    enquiriesLoading.value = false
+    return
+  }
+  const baseEnquiriesCollection = collection(db, 'enquiries')
+  const enquiriesQuery = isAdminUser.value
+    ? query(baseEnquiriesCollection, orderBy('createdAt', 'desc'))
+    : query(baseEnquiriesCollection, where('userId', '==', authStore.user.uid))
   unsubscribeEnquiries = onSnapshot(
     enquiriesQuery,
     (snapshot) => {
-      enquiries.value = snapshot.docs.map((docRef) => ({
+      const items = snapshot.docs.map((docRef) => ({
         id: docRef.id,
         ...docRef.data(),
       }))
+      enquiries.value = isAdminUser.value ? items : sortByCreatedAtDesc(items)
       enquiriesLoading.value = false
     },
     (err) => {
@@ -772,6 +798,18 @@ const setupEnquiriesListener = () => {
       enquiriesLoading.value = false
     }
   )
+}
+
+// Rebuild the enquiries listener when auth context changes.
+const refreshEnquiriesListener = () => {
+  if (unsubscribeEnquiries) {
+    unsubscribeEnquiries()
+    unsubscribeEnquiries = null
+  }
+  enquiriesError.value = ''
+  enquiries.value = []
+  enquiriesLoading.value = true
+  setupEnquiriesListener()
 }
 
 // Listen for LGA subscription updates for the current user.
@@ -1001,7 +1039,7 @@ const handleProfileUpdate = async () => {
 }
 
 onMounted(() => {
-  setupEnquiriesListener()
+  refreshEnquiriesListener()
   setupSubscriptionListener()
   lastNotificationSentAt.value = Number(localStorage.getItem(NOTIFICATION_LAST_SENT_KEY)) || 0
   notificationNow.value = Date.now()
@@ -1029,6 +1067,7 @@ onBeforeUnmount(() => {
 watch(
   () => authStore.user?.uid,
   () => {
+    refreshEnquiriesListener()
     if (unsubscribeSubscriptions) {
       unsubscribeSubscriptions()
     }
