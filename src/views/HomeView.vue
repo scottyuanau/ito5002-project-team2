@@ -85,7 +85,7 @@
 
       <!-- Find a suburb -->
       <section
-        class="glass-section mx-auto flex w-full max-w-5xl flex-col items-center gap-6 self-start px-6"
+        class="glass-section suburb-search-section mx-auto flex w-full max-w-5xl flex-col items-center gap-6 self-start px-6"
       >
         <div class="space-y-2 text-center">
           <h2 class="text-3xl font-semibold text-slate-900">Find a suburb</h2>
@@ -93,12 +93,54 @@
         </div>
         <form class="flex w-full flex-col gap-3 sm:flex-row" @submit.prevent="handleSearch">
           <div class="grid w-full grid-cols-[minmax(0,1fr)_8.5rem] gap-3 sm:contents">
-            <InputText
-              v-model="suburb"
-              class="w-full min-w-0"
-              placeholder="Enter suburb name"
-              aria-label="Suburb name"
-            />
+            <div class="relative w-full min-w-0">
+              <InputText
+                v-model="suburb"
+                class="w-full min-w-0"
+                placeholder="Enter suburb name"
+                aria-label="Suburb name"
+                aria-autocomplete="list"
+                :aria-expanded="suburbSuggestionsOpen"
+                :aria-controls="suburbSuggestionsOpen ? 'suburb-autocomplete-list' : undefined"
+                @focus="handleSuburbFocus"
+                @keydown.esc="closeSuburbSuggestions"
+              />
+              <div
+                v-if="suburbSuggestionsOpen"
+                id="suburb-autocomplete-list"
+                class="absolute left-0 right-0 top-full z-30 mt-2 max-h-64 overflow-auto rounded-2xl border border-white/70 bg-white/90 p-2 text-left shadow-lg backdrop-blur"
+                role="listbox"
+                aria-label="Suburb suggestions"
+              >
+                <p v-if="suburbSuggestionsLoading" class="px-3 py-2 text-sm text-slate-500">
+                  Searching suburbs...
+                </p>
+                <p v-else-if="suburbSuggestionsError" class="px-3 py-2 text-sm text-red-600">
+                  {{ suburbSuggestionsError }}
+                </p>
+                <p
+                  v-else-if="!suburbSuggestions.length"
+                  class="px-3 py-2 text-sm text-slate-500"
+                >
+                  No matches found.
+                </p>
+                <button
+                  v-for="item in suburbSuggestions"
+                  :key="item.place_id || item.formatted"
+                  type="button"
+                  class="flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-emerald-50 focus-visible:bg-emerald-50 focus-visible:outline-none"
+                  role="option"
+                  @mousedown.prevent="selectSuburbSuggestion(item)"
+                >
+                  <span class="font-medium text-slate-900">
+                    {{ item.address_line1 || item.suburb || item.city || item.formatted }}
+                  </span>
+                  <span class="text-xs text-slate-500">
+                    {{ item.formatted || item.address_line2 || item.state }}
+                  </span>
+                </button>
+              </div>
+            </div>
             <Dropdown
               v-model="selectedState"
               :options="states"
@@ -165,7 +207,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Carousel from 'primevue/carousel'
@@ -181,6 +223,13 @@ const authStore = useAuthStore()
 const suburb = ref('')
 const selectedState = ref('')
 const states = ['NSW', 'VIC', 'TAS', 'NT', 'SA', 'WA', 'QLD', 'ACT']
+const suburbSuggestions = ref([])
+const suburbSuggestionsOpen = ref(false)
+const suburbSuggestionsLoading = ref(false)
+const suburbSuggestionsError = ref('')
+const lastAutocompleteQuery = ref('')
+const autocompleteTimer = ref(null)
+const autocompleteAbortController = ref(null)
 const popularSuburbs = [
   { title: 'Sydney', subtitle: 'Sydney, NSW', slug: 'sydney', state: 'NSW' },
   { title: 'Clayton', subtitle: 'Clayton, Melbourne', slug: 'clayton', state: 'VIC' },
@@ -215,6 +264,9 @@ const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 const HOME_PM25_HOURLY_CACHE_PREFIX = 'homePm25HourlyCache:v1:'
 const HOME_POPULAR_PM25_CACHE_PREFIX = 'homePopularPm25Cache:v1:'
+const SUBURB_AUTOCOMPLETE_CACHE_PREFIX = 'geoapify:suburbAutocomplete:v1:'
+const SUBURB_AUTOCOMPLETE_MIN_CHARS = 2
+const SUBURB_AUTOCOMPLETE_LIMIT = 8
 
 const greetingName = computed(() => {
   const raw = (authStore.displayName || '').trim()
@@ -381,6 +433,164 @@ const writeCache = (cacheKey, data) => {
   } catch {
     // Some browsers (Safari private mode) throw QuotaExceededError; skip caching.
   }
+}
+
+const readAutocompleteCache = (cacheKey) => {
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (!Array.isArray(parsed.data)) {
+      return null
+    }
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+const writeAutocompleteCache = (cacheKey, data) => {
+  const payload = JSON.stringify({ data })
+  try {
+    localStorage.setItem(cacheKey, payload)
+  } catch {
+    // Skip caching when localStorage is unavailable.
+  }
+}
+
+const getSuburbAutocompleteCacheKey = (query) =>
+  `${SUBURB_AUTOCOMPLETE_CACHE_PREFIX}${query.toLowerCase()}`
+
+const normalizeSuburbQuery = (value) => value.trim()
+
+const closeSuburbSuggestions = () => {
+  suburbSuggestionsOpen.value = false
+}
+
+const openSuburbSuggestions = () => {
+  suburbSuggestionsOpen.value = true
+}
+
+const loadSuburbSuggestions = async (rawQuery) => {
+  const query = normalizeSuburbQuery(rawQuery)
+  if (query.length < SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    suburbSuggestions.value = []
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    closeSuburbSuggestions()
+    return
+  }
+
+  const cacheKey = getSuburbAutocompleteCacheKey(query)
+  const cached = readAutocompleteCache(cacheKey)
+  if (cached) {
+    suburbSuggestions.value = cached
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    openSuburbSuggestions()
+    return
+  }
+
+  const apiKey = import.meta.env.VITE_GEOAPIFY_API || ''
+  if (!apiKey) {
+    suburbSuggestionsError.value = 'Missing Geoapify API key.'
+    suburbSuggestionsLoading.value = false
+    openSuburbSuggestions()
+    return
+  }
+
+  if (autocompleteAbortController.value) {
+    autocompleteAbortController.value.abort()
+  }
+  const controller = new AbortController()
+  autocompleteAbortController.value = controller
+
+  suburbSuggestionsLoading.value = true
+  suburbSuggestionsError.value = ''
+  openSuburbSuggestions()
+
+  try {
+    const url = new URL('https://api.geoapify.com/v1/geocode/autocomplete')
+    url.searchParams.set('text', query)
+    url.searchParams.set('format', 'json')
+    url.searchParams.set('filter', 'countrycode:au')
+    url.searchParams.set('type', 'city')
+    url.searchParams.set('limit', String(SUBURB_AUTOCOMPLETE_LIMIT))
+    url.searchParams.set('apiKey', apiKey)
+
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) {
+      throw new Error('Unable to load suburb suggestions.')
+    }
+    const payload = await response.json()
+    const results = Array.isArray(payload?.results) ? payload.results : []
+    suburbSuggestions.value = results
+    writeAutocompleteCache(cacheKey, results)
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return
+    }
+    suburbSuggestionsError.value =
+      error instanceof Error ? error.message : 'Unable to load suburb suggestions.'
+    suburbSuggestions.value = []
+  } finally {
+    suburbSuggestionsLoading.value = false
+  }
+}
+
+const scheduleSuburbAutocomplete = (value) => {
+  if (autocompleteTimer.value) {
+    clearTimeout(autocompleteTimer.value)
+  }
+  const query = normalizeSuburbQuery(value)
+  if (query.length < SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    suburbSuggestions.value = []
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    closeSuburbSuggestions()
+    return
+  }
+  autocompleteTimer.value = setTimeout(() => {
+    if (query === lastAutocompleteQuery.value) {
+      return
+    }
+    lastAutocompleteQuery.value = query
+    loadSuburbSuggestions(query)
+  }, 250)
+}
+
+const handleSuburbFocus = () => {
+  if (suburb.value.trim().length >= SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    openSuburbSuggestions()
+  }
+}
+
+const selectSuburbSuggestion = (item) => {
+  const label =
+    item?.address_line1 ||
+    item?.suburb ||
+    item?.city ||
+    item?.town ||
+    item?.village ||
+    item?.formatted ||
+    ''
+  if (label) {
+    suburb.value = label
+  }
+  if (!selectedState.value && item?.state_code && states.includes(item.state_code)) {
+    selectedState.value = item.state_code
+  }
+  closeSuburbSuggestions()
 }
 
 // Wrap the Geolocation API in a promise for async/await usage.
@@ -910,6 +1120,7 @@ const handleSearch = () => {
   if (!canSearch.value) {
     return
   }
+  closeSuburbSuggestions()
   const normalized = suburb.value.trim().toLowerCase()
   const slug = normalized.replace(/\s+/g, '-')
   router.push({
@@ -954,7 +1165,21 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', handleInitialScroll)
+  if (autocompleteTimer.value) {
+    clearTimeout(autocompleteTimer.value)
+  }
+  if (autocompleteAbortController.value) {
+    autocompleteAbortController.value.abort()
+  }
 })
+
+watch(
+  suburb,
+  (value) => {
+    scheduleSuburbAutocomplete(value)
+  },
+  { flush: 'post' },
+)
 </script>
 
 <style scoped>
@@ -1014,6 +1239,12 @@ onBeforeUnmount(() => {
   box-shadow: 0 14px 28px rgb(15 23 42 / 14%);
   backdrop-filter: blur(10px) saturate(120%);
   -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+.suburb-search-section {
+  position: relative;
+  z-index: 3;
+  overflow: visible;
 }
 
 .scroll-cue {
