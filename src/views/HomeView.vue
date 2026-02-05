@@ -92,19 +92,21 @@
           <p class="text-sm text-slate-500">Search Australian suburbs by name and state.</p>
         </div>
         <form class="flex w-full flex-col gap-3 sm:flex-row" @submit.prevent="handleSearch">
-          <InputText
-            v-model="suburb"
-            class="w-full"
-            placeholder="Enter suburb name"
-            aria-label="Suburb name"
-          />
-          <Dropdown
-            v-model="selectedState"
-            :options="states"
-            class="w-full sm:w-40"
-            placeholder="State"
-            aria-label="State"
-          />
+          <div class="grid w-full grid-cols-[minmax(0,1fr)_8.5rem] gap-3 sm:contents">
+            <InputText
+              v-model="suburb"
+              class="w-full min-w-0"
+              placeholder="Enter suburb name"
+              aria-label="Suburb name"
+            />
+            <Dropdown
+              v-model="selectedState"
+              :options="states"
+              class="w-full sm:w-40"
+              placeholder="State"
+              aria-label="State"
+            />
+          </div>
           <Button type="submit" label="Search" class="w-full sm:w-auto" :disabled="!canSearch" />
         </form>
       </section>
