@@ -9,80 +9,6 @@
         </div>
       </section>
 
-      <!-- Today in your area -->
-      <section class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
-        <div class="space-y-2 text-center">
-          <h2 class="text-3xl font-semibold text-slate-900">Today in {{ locationLabel }}</h2>
-          <p class="text-sm text-slate-500">
-            Live PM2.5 readings and safety guidance based on your current location.
-          </p>
-        </div>
-        <p v-if="locationError || airQualityError" class="text-sm text-red-600">
-          {{ locationError || airQualityError }}
-        </p>
-        <p v-else-if="locationLoading || airQualityLoading" class="text-sm text-slate-500">
-          Loading local air quality...
-        </p>
-        <p v-if="airQualityNotice" class="text-sm text-amber-700">
-          {{ airQualityNotice }}
-        </p>
-        <Pm25RecommendationsPanel
-          v-if="!locationError && !airQualityError"
-          class="w-full min-w-0"
-          layout="split"
-          :title="`Today in ${locationLabel}`"
-          :current-value="pm25CurrentValue"
-          :trend-values="pm25TrendValues"
-          :unit="pm25Unit"
-        />
-        <div
-          v-if="!locationError && !airQualityError"
-          class="glass-surface space-y-3 rounded-2xl p-4"
-        >
-          <div>
-            <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
-            <p class="text-xs text-slate-500">Last 12 hours and forecast for next 12 hours.</p>
-          </div>
-          <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
-          <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
-            Loading hourly PM2.5 data...
-          </p>
-          <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">{{ pm25HourlyNotice }}</p>
-          <p
-            v-if="!pm25HourlyLoading && !pm25HourlyError && !pm25HourlyChartData.labels.length"
-            class="text-sm text-slate-500"
-          >
-            No hourly PM2.5 data available right now.
-          </p>
-          <div v-else class="h-72 w-full">
-            <Chart
-              type="line"
-              :data="pm25HourlyChartData"
-              :options="pm25HourlyChartOptions"
-              class="h-full w-full"
-            />
-          </div>
-        </div>
-      </section>
-
-      <!-- Daily air-friendly habit card -->
-      <section class="glass-section mx-auto flex w-full max-w-5xl px-6">
-        <div class="glass-surface w-full rounded-2xl p-6 text-left">
-          <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
-            Daily air-friendly habit
-          </p>
-          <h3 class="mt-3 text-lg font-semibold text-slate-900">
-            {{ todaysTip.title }}
-          </h3>
-          <p class="mt-2 text-sm text-slate-700">
-            {{ todaysTip.description }}
-          </p>
-          <p class="mt-3 text-xs text-slate-500">
-            Small choices at home add up to cleaner air for your street and city.
-          </p>
-        </div>
-      </section>
-
       <!-- Find a suburb -->
       <section
         class="glass-section suburb-search-section mx-auto flex w-full max-w-5xl flex-col items-center gap-6 self-start px-6"
@@ -153,6 +79,125 @@
         </form>
       </section>
 
+      <!-- Today in your area -->
+      <section class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
+        <div class="space-y-2 text-center">
+          <h2 class="text-3xl font-semibold text-slate-900">Today in {{ locationLabel }}</h2>
+          <p class="text-sm text-slate-500">
+            Live PM2.5 readings and safety guidance based on your current location.
+          </p>
+        </div>
+        <p v-if="locationError || airQualityError" class="text-sm text-red-600">
+          {{ locationError || airQualityError }}
+        </p>
+        <p v-else-if="locationLoading || airQualityLoading" class="text-sm text-slate-500">
+          Loading local air quality...
+        </p>
+        <p v-if="airQualityNotice" class="text-sm text-amber-700">
+          {{ airQualityNotice }}
+        </p>
+        <Pm25RecommendationsPanel
+          v-if="!locationError && !airQualityError"
+          class="w-full min-w-0"
+          layout="split"
+          :title="`Today in ${locationLabel}`"
+          :current-value="pm25CurrentValue"
+          :trend-values="pm25TrendValues"
+          :unit="pm25Unit"
+        />
+        <div
+          v-if="!locationError && !airQualityError"
+          class="glass-surface space-y-3 rounded-2xl p-4"
+        >
+          <div>
+            <p class="text-sm font-medium text-slate-900">Hourly trend (PM2.5)</p>
+            <p class="text-xs text-slate-500">Last 12 hours and forecast for next 12 hours.</p>
+          </div>
+          <p v-if="pm25HourlyError" class="text-sm text-red-600">{{ pm25HourlyError }}</p>
+          <p v-else-if="pm25HourlyLoading" class="text-sm text-slate-500">
+            Loading hourly PM2.5 data...
+          </p>
+          <p v-if="pm25HourlyNotice" class="text-sm text-amber-700">{{ pm25HourlyNotice }}</p>
+          <p
+            v-if="!pm25HourlyLoading && !pm25HourlyError && !pm25HourlyChartData.labels.length"
+            class="text-sm text-slate-500"
+          >
+            No hourly PM2.5 data available right now.
+          </p>
+          <div v-else class="h-72 w-full">
+            <Chart
+              type="line"
+              :data="pm25HourlyChartData"
+              :options="pm25HourlyChartOptions"
+              class="h-full w-full"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- My followed cities -->
+      <section
+        v-if="hasFollowedSuburbs"
+        class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6"
+      >
+        <div class="space-y-2 text-center">
+          <h2 class="text-3xl font-semibold text-slate-900">My followed cities</h2>
+          <p class="text-sm text-slate-500">
+            Quick air quality snapshots for suburbs you&apos;re subscribed to.
+          </p>
+        </div>
+        <Carousel
+          :value="followedSuburbs"
+          :numVisible="3"
+          :numScroll="1"
+          :responsiveOptions="carouselBreakpoints"
+          class="w-full"
+        >
+          <template #item="{ data }">
+            <div
+              class="glass-surface mx-3 flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-6 transition hover:-translate-y-1 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              role="button"
+              tabindex="0"
+              @click="navigateToFollowedSuburb(data)"
+              @keydown.enter="navigateToFollowedSuburb(data)"
+            >
+              <span class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500">
+                {{ data.state || 'Subscribed' }}
+              </span>
+              <div class="space-y-1">
+                <h3 class="text-xl font-semibold text-slate-900">{{ data.title }}</h3>
+                <p class="text-sm text-slate-500">{{ data.subtitle }}</p>
+              </div>
+              <div class="flex justify-center">
+                <Pm25MiniGauge :current-value="getFollowedSuburbPm25Value(data)" unit="ug/m3" />
+              </div>
+              <span class="text-sm font-semibold text-emerald-600">
+                Open suburb
+                <i class="pi pi-arrow-right ml-1 text-xs"></i>
+              </span>
+            </div>
+          </template>
+        </Carousel>
+      </section>
+
+      <!-- Daily air-friendly habit card -->
+      <section class="glass-section mx-auto flex w-full max-w-5xl px-6">
+        <div class="glass-surface w-full rounded-2xl p-6 text-left">
+          <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
+            Daily air-friendly habit
+          </p>
+          <h3 class="mt-3 text-lg font-semibold text-slate-900">
+            {{ todaysTip.title }}
+          </h3>
+          <p class="mt-2 text-sm text-slate-700">
+            {{ todaysTip.description }}
+          </p>
+          <p class="mt-3 text-xs text-slate-500">
+            Small choices at home add up to cleaner air for your street and city.
+          </p>
+        </div>
+      </section>
+
       <!-- Popular cities -->
       <section class="glass-section mx-auto flex w-full max-w-5xl flex-col gap-6 px-6">
         <div class="space-y-2 text-center">
@@ -209,6 +254,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import Button from 'primevue/button'
 import Carousel from 'primevue/carousel'
 import Chart from 'primevue/chart'
@@ -216,6 +262,7 @@ import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
 import Pm25MiniGauge from '../components/Pm25MiniGauge.vue'
 import Pm25RecommendationsPanel from '../components/Pm25RecommendationsPanel.vue'
+import { db } from '../firebase'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
@@ -257,6 +304,10 @@ const pm25HourlyNotice = ref('')
 const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
 const showScrollCue = ref(true)
 const popularSuburbPm25 = ref({})
+const followedSuburbs = ref([])
+const followedSuburbPm25 = ref({})
+let unsubscribeFollowedSuburbs = null
+let followedSuburbCacheKey = ''
 
 const HOME_CACHE_TTL_MS = 60 * 60 * 1000
 const HOME_CACHE_STALE_MS = 24 * 60 * 60 * 1000
@@ -264,9 +315,11 @@ const HOME_AIR_CACHE_PREFIX = 'homeAirQualityCache:v1:'
 const HOME_LOCATION_CACHE_PREFIX = 'homeLocationCache:v1:'
 const HOME_PM25_HOURLY_CACHE_PREFIX = 'homePm25HourlyCache:v1:'
 const HOME_POPULAR_PM25_CACHE_PREFIX = 'homePopularPm25Cache:v1:'
+const HOME_FOLLOWED_SUBURBS_CACHE_PREFIX = 'homeFollowedSuburbs:v1:'
 const SUBURB_AUTOCOMPLETE_CACHE_PREFIX = 'geoapify:suburbAutocomplete:v1:'
 const SUBURB_AUTOCOMPLETE_MIN_CHARS = 2
 const SUBURB_AUTOCOMPLETE_LIMIT = 8
+const HOME_FOLLOWED_SUBURBS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const greetingName = computed(() => {
   const raw = (authStore.displayName || '').trim()
@@ -296,6 +349,8 @@ const greetingMessage = computed(() =>
     ? `Good ${greetingTimeOfDay.value}, ${greetingName.value}!`
     : `Good ${greetingTimeOfDay.value}!`,
 )
+
+const hasFollowedSuburbs = computed(() => followedSuburbs.value.length > 0)
 
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
 
@@ -764,6 +819,64 @@ const getPopularSuburbPm25Value = (item) => {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : null
 }
 
+// Build a stable slug from a suburb or LGA name.
+const normalizeSuburbSlug = (value) => value.trim().toLowerCase().replace(/\s+/g, '-')
+
+// Build the localStorage cache key for a user's followed suburbs.
+const getFollowedSuburbCacheKey = (userId) => `${HOME_FOLLOWED_SUBURBS_CACHE_PREFIX}${userId}`
+
+// Transform Firestore subscription docs into display-ready cards.
+const mapFollowedSuburbItems = (items) =>
+  items.map((item) => {
+    const title = item.lgaName || 'Unknown suburb'
+    const state = (item.state || '').toUpperCase()
+    const slug = item.lgaSlug || normalizeSuburbSlug(title)
+    return {
+      id: item.id,
+      title,
+      subtitle: state ? `${title}, ${state}` : title,
+      slug,
+      state,
+    }
+  })
+
+// Get a lookup key for followed suburb cards.
+const getFollowedSuburbKey = (item) => `${item.slug}|${item.state}`
+
+// Get a formatted PM2.5 value for followed suburb cards.
+const getFollowedSuburbPm25Value = (item) => {
+  const value = followedSuburbPm25.value[getFollowedSuburbKey(item)]
+  return Number.isFinite(value) ? Number(value.toFixed(2)) : null
+}
+
+// Resolve PM2.5 readings for followed suburb cards with caching.
+const loadFollowedSuburbPm25 = async () => {
+  if (!followedSuburbs.value.length) {
+    followedSuburbPm25.value = {}
+    return
+  }
+  const entries = await Promise.all(
+    followedSuburbs.value.map(async (item) => {
+      const cacheKey = `${HOME_POPULAR_PM25_CACHE_PREFIX}followed:${item.slug}|${item.state}`
+      try {
+        const value = await fetchPopularSuburbPm25({
+          suburbName: item.title,
+          state: item.state,
+          cacheKey,
+        })
+        return [getFollowedSuburbKey(item), value]
+      } catch {
+        return [getFollowedSuburbKey(item), null]
+      }
+    }),
+  )
+
+  followedSuburbPm25.value = entries.reduce((acc, [key, value]) => {
+    acc[key] = value
+    return acc
+  }, {})
+}
+
 const pm25HourlyChartData = computed(() => ({
   labels: pm25HourlySeries.value.labels,
   datasets: [
@@ -1038,6 +1151,66 @@ const loadPopularSuburbPm25 = async () => {
   }, {})
 }
 
+// Clear the cached followed suburbs for the current user.
+const clearFollowedSuburbCache = (cacheKey) => {
+  try {
+    localStorage.removeItem(cacheKey)
+  } catch {
+    // Ignore storage failures in restricted browser modes.
+  }
+}
+
+// Listen for updates to the authenticated user's followed suburbs.
+const setupFollowedSuburbListener = () => {
+  if (!db || !authStore.user?.uid) {
+    followedSuburbs.value = []
+    followedSuburbPm25.value = {}
+    return
+  }
+
+  const cacheKey = getFollowedSuburbCacheKey(authStore.user.uid)
+  followedSuburbCacheKey = cacheKey
+  const cached = readCacheWithTtl(cacheKey, HOME_FOLLOWED_SUBURBS_CACHE_TTL_MS)
+  if (cached) {
+    followedSuburbs.value = cached
+    loadFollowedSuburbPm25()
+  }
+
+  const subscriptionQuery = query(
+    collection(db, 'lgaSubscriptions'),
+    where('userId', '==', authStore.user.uid),
+  )
+  unsubscribeFollowedSuburbs = onSnapshot(
+    subscriptionQuery,
+    (snapshot) => {
+      const items = snapshot.docs.map((docRef) => ({ id: docRef.id, ...docRef.data() }))
+      const mapped = mapFollowedSuburbItems(items)
+      followedSuburbs.value = mapped
+      clearFollowedSuburbCache(cacheKey)
+      writeCache(cacheKey, mapped)
+      loadFollowedSuburbPm25()
+    },
+    (err) => {
+      console.error(err?.message ?? 'Unable to load followed suburbs.')
+    },
+  )
+}
+
+// Reset and rebuild the followed suburbs listener when auth changes.
+const refreshFollowedSuburbListener = () => {
+  if (unsubscribeFollowedSuburbs) {
+    unsubscribeFollowedSuburbs()
+    unsubscribeFollowedSuburbs = null
+  }
+  if (followedSuburbCacheKey) {
+    clearFollowedSuburbCache(followedSuburbCacheKey)
+    followedSuburbCacheKey = ''
+  }
+  followedSuburbs.value = []
+  followedSuburbPm25.value = {}
+  setupFollowedSuburbListener()
+}
+
 const loadLocalAirQuality = async () => {
   locationError.value = ''
   airQualityError.value = ''
@@ -1139,6 +1312,16 @@ const navigateToSuburb = (item) => {
   })
 }
 
+// Navigate to a followed suburb card selection.
+const navigateToFollowedSuburb = (item) => {
+  const query = item.state ? { state: item.state } : {}
+  router.push({
+    name: 'suburb',
+    params: { suburb: item.slug },
+    query,
+  })
+}
+
 // Jump to the next section and hide the initial scroll cue.
 const scrollToNextSection = () => {
   const nextSection = document.querySelector('.home-content section:nth-of-type(2)')
@@ -1160,6 +1343,7 @@ const handleInitialScroll = () => {
 onMounted(() => {
   loadLocalAirQuality()
   loadPopularSuburbPm25()
+  refreshFollowedSuburbListener()
   window.addEventListener('scroll', handleInitialScroll, { passive: true })
 })
 
@@ -1171,6 +1355,9 @@ onBeforeUnmount(() => {
   if (autocompleteAbortController.value) {
     autocompleteAbortController.value.abort()
   }
+  if (unsubscribeFollowedSuburbs) {
+    unsubscribeFollowedSuburbs()
+  }
 })
 
 watch(
@@ -1179,6 +1366,13 @@ watch(
     scheduleSuburbAutocomplete(value)
   },
   { flush: 'post' },
+)
+
+watch(
+  () => authStore.user?.uid,
+  () => {
+    refreshFollowedSuburbListener()
+  },
 )
 </script>
 
