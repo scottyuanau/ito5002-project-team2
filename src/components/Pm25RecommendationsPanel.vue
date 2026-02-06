@@ -33,7 +33,7 @@
     </div>
     <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
       <p class="text-sm font-medium text-slate-900">{{ title }}</p>
-      <ul class="mt-3 space-y-2 text-sm text-slate-600">
+      <ul class="mt-3 space-y-2 text-left text-sm text-slate-600">
         <li class="flex items-start gap-2">
           <span>{{ pm25Tier.emoji }}</span>
           <span>Air quality looks {{ pm25Tier.label.toLowerCase() }} right now</span>
