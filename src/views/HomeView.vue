@@ -278,6 +278,7 @@ const suburbSuggestionsError = ref('')
 const lastAutocompleteQuery = ref('')
 const autocompleteTimer = ref(null)
 const autocompleteAbortController = ref(null)
+const suppressAutocomplete = ref(false)
 const popularSuburbs = [
   { title: 'Sydney', subtitle: 'Sydney, NSW', slug: 'sydney', state: 'NSW' },
   { title: 'Clayton', subtitle: 'Clayton, Melbourne', slug: 'clayton', state: 'VIC' },
@@ -529,6 +530,25 @@ const getSuburbAutocompleteCacheKey = (query) =>
 
 const normalizeSuburbQuery = (value) => value.trim()
 
+const normalizeStateSelection = (item) => {
+  const code = typeof item?.state_code === 'string' ? item.state_code.trim().toUpperCase() : ''
+  if (code && states.includes(code)) {
+    return code
+  }
+  const name = typeof item?.state === 'string' ? item.state.trim().toLowerCase() : ''
+  const map = {
+    'new south wales': 'NSW',
+    'victoria': 'VIC',
+    'queensland': 'QLD',
+    'western australia': 'WA',
+    'south australia': 'SA',
+    'tasmania': 'TAS',
+    'australian capital territory': 'ACT',
+    'northern territory': 'NT',
+  }
+  return map[name] || ''
+}
+
 const closeSuburbSuggestions = () => {
   suburbSuggestionsOpen.value = false
 }
@@ -632,6 +652,7 @@ const handleSuburbFocus = () => {
 }
 
 const selectSuburbSuggestion = (item) => {
+  const normalizedState = normalizeStateSelection(item)
   const label =
     item?.address_line1 ||
     item?.suburb ||
@@ -641,12 +662,17 @@ const selectSuburbSuggestion = (item) => {
     item?.formatted ||
     ''
   if (label) {
+    suppressAutocomplete.value = true
+    lastAutocompleteQuery.value = label
     suburb.value = label
   }
-  if (!selectedState.value && item?.state_code && states.includes(item.state_code)) {
-    selectedState.value = item.state_code
+  if (normalizedState) {
+    selectedState.value = normalizedState
   }
   closeSuburbSuggestions()
+  setTimeout(() => {
+    suppressAutocomplete.value = false
+  }, 0)
 }
 
 // Wrap the Geolocation API in a promise for async/await usage.
@@ -1364,6 +1390,9 @@ onBeforeUnmount(() => {
 watch(
   suburb,
   (value) => {
+    if (suppressAutocomplete.value) {
+      return
+    }
     scheduleSuburbAutocomplete(value)
   },
   { flush: 'post' },

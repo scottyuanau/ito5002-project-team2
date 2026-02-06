@@ -161,7 +161,19 @@
                         :key="value.key"
                         class="px-4 py-3 text-slate-700"
                       >
-                        {{ value.value }}
+                        <span class="inline-flex items-center gap-2">
+                          <span>{{ value.value }}</span>
+                          <i
+                            v-if="value.status === 'better'"
+                            class="pi pi-check-circle text-emerald-500"
+                            aria-hidden="true"
+                          />
+                          <i
+                            v-else-if="value.status === 'worse'"
+                            class="pi pi-times-circle text-red-500"
+                            aria-hidden="true"
+                          />
+                        </span>
                       </td>
                     </template>
                   </tr>
@@ -230,7 +242,19 @@
                         :key="value.key"
                         class="px-4 py-3 text-slate-700"
                       >
-                        {{ value.value }}
+                        <span class="inline-flex items-center gap-2">
+                          <span>{{ value.value }}</span>
+                          <i
+                            v-if="value.status === 'better'"
+                            class="pi pi-check-circle text-emerald-500"
+                            aria-hidden="true"
+                          />
+                          <i
+                            v-else-if="value.status === 'worse'"
+                            class="pi pi-times-circle text-red-500"
+                            aria-hidden="true"
+                          />
+                        </span>
                       </td>
                     </template>
                   </tr>
@@ -317,6 +341,7 @@ const suburbSuggestionsError = ref('')
 const lastAutocompleteQuery = ref('')
 const autocompleteTimer = ref(null)
 const autocompleteAbortController = ref(null)
+const suppressAutocomplete = ref(false)
 const loading = ref(false)
 const greenLoading = ref(false)
 const trendLoading = ref(false)
@@ -351,6 +376,7 @@ const pollutants = [
   { key: 'sulphur_dioxide', label: 'SO2' },
   { key: 'ozone', label: 'O3' },
 ]
+const pollutantDirection = Object.fromEntries(pollutants.map((metric) => [metric.key, 'lower']))
 const pollutantDescriptions = {
   pm2_5:
     'PM2.5: Fine particles from exhaust, smoke and industry that can travel deep into lungs and blood. Direction: lower is better.',
@@ -388,6 +414,13 @@ const greenMetricDescriptions = {
   soil_moisture_0_to_7cm:
     'Water content in topsoil (0-7 cm), indicating near-surface moisture availability. Direction: generally higher helps plants, but overly saturated soil can be harmful.',
 }
+const greenMetricDirection = {
+  temperature_2m: 'neutral',
+  rain: 'higher',
+  vapour_pressure_deficit: 'lower',
+  soil_temperature_0_to_7cm: 'neutral',
+  soil_moisture_0_to_7cm: 'higher',
+}
 
 const canAdd = computed(() => suburbInput.value.trim().length > 0 && selectedState.value)
 
@@ -402,6 +435,54 @@ const toTitleCase = (value) =>
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
+
+const normalizeStateSelection = (item) => {
+  const code = typeof item?.state_code === 'string' ? item.state_code.trim().toUpperCase() : ''
+  if (code && states.includes(code)) {
+    return code
+  }
+  const name = typeof item?.state === 'string' ? item.state.trim().toLowerCase() : ''
+  const map = {
+    'new south wales': 'NSW',
+    victoria: 'VIC',
+    queensland: 'QLD',
+    'western australia': 'WA',
+    'south australia': 'SA',
+    tasmania: 'TAS',
+    'australian capital territory': 'ACT',
+    'northern territory': 'NT',
+  }
+  return map[name] || ''
+}
+
+const getNumericValue = (value) => {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+const getMetricComparisonStatus = (values, direction) => {
+  if (!direction || direction === 'neutral') {
+    return {}
+  }
+  const numericEntries = values
+    .map((entry) => ({ key: entry.key, value: getNumericValue(entry.value) }))
+    .filter((entry) => entry.value !== null)
+  if (numericEntries.length < 2) {
+    return {}
+  }
+  const sorted = [...numericEntries].sort((a, b) =>
+    direction === 'lower' ? a.value - b.value : b.value - a.value,
+  )
+  const best = sorted[0]
+  const worst = sorted[sorted.length - 1]
+  if (best.value === worst.value) {
+    return {}
+  }
+  return {
+    [best.key]: 'better',
+    [worst.key]: 'worse',
+  }
+}
 
 const readAutocompleteCache = (cacheKey) => {
   let raw
@@ -544,6 +625,7 @@ const handleSuburbFocus = () => {
 }
 
 const selectSuburbSuggestion = (item) => {
+  const normalizedState = normalizeStateSelection(item)
   const label =
     item?.address_line1 ||
     item?.suburb ||
@@ -553,12 +635,17 @@ const selectSuburbSuggestion = (item) => {
     item?.formatted ||
     ''
   if (label) {
+    suppressAutocomplete.value = true
+    lastAutocompleteQuery.value = label
     suburbInput.value = label
   }
-  if (!selectedState.value && item?.state_code && states.includes(item.state_code)) {
-    selectedState.value = item.state_code
+  if (normalizedState) {
+    selectedState.value = normalizedState
   }
   closeSuburbSuggestions()
+  setTimeout(() => {
+    suppressAutocomplete.value = false
+  }, 0)
 }
 
 // Persist compare selections and loaded metrics in local storage.
@@ -1254,11 +1341,16 @@ const loadTrendComparison = async () => {
 
 const comparisonRows = computed(() =>
   pollutants.map((metric) => {
-    const values = compareSuburbs.value.map((suburb) => {
+    const rawValues = compareSuburbs.value.map((suburb) => {
       const metrics = comparisonResults.value[suburb.key]?.metrics
       const value = metrics?.[metric.key]?.value ?? '—'
       return { key: suburb.key, value }
     })
+    const statusByKey = getMetricComparisonStatus(rawValues, pollutantDirection[metric.key])
+    const values = rawValues.map((entry) => ({
+      ...entry,
+      status: statusByKey[entry.key] || null,
+    }))
 
     const unit =
       compareSuburbs.value
@@ -1276,11 +1368,16 @@ const comparisonRows = computed(() =>
 
 const greenComparisonRows = computed(() =>
   greenMetrics.map((metric) => {
-    const values = compareSuburbs.value.map((suburb) => {
+    const rawValues = compareSuburbs.value.map((suburb) => {
       const metrics = greenComparisonResults.value[suburb.key]?.metrics
       const value = metrics?.[metric.key]?.value ?? '—'
       return { key: suburb.key, value }
     })
+    const statusByKey = getMetricComparisonStatus(rawValues, greenMetricDirection[metric.key])
+    const values = rawValues.map((entry) => ({
+      ...entry,
+      status: statusByKey[entry.key] || null,
+    }))
 
     const unit =
       compareSuburbs.value
@@ -1452,6 +1549,9 @@ watch(activeTab, (value) => {
 watch(
   suburbInput,
   (value) => {
+    if (suppressAutocomplete.value) {
+      return
+    }
     scheduleSuburbAutocomplete(value)
   },
   { flush: 'post' },
