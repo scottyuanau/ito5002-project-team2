@@ -56,6 +56,15 @@
                   {{ emailDailyHelperText }}
                 </p>
               </div>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <p class="text-xs text-slate-500">Manage your subscribed suburbs below.</p>
+                <Button
+                  label="Add suburb"
+                  size="small"
+                  class="w-full sm:w-auto"
+                  @click="openAddSuburbDialog"
+                />
+              </div>
               <div
                 v-if="subscriptionsLoading"
                 class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
@@ -67,7 +76,7 @@
                 v-else-if="subscriptions.length === 0"
                 class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500"
               >
-                No LGA subscriptions yet. Subscribe from a suburb page.
+                <p>No LGA subscriptions yet. Add a suburb to get started.</p>
               </div>
 
               <div v-else class="space-y-3">
@@ -277,14 +286,119 @@
         </TabPanel>
       </TabPanels>
     </Tabs>
+
+    <Dialog
+      v-model:visible="addSuburbDialogVisible"
+      modal
+      header="Add a suburb"
+      class="add-suburb-dialog"
+      :style="{ width: 'min(560px, 92vw)' }"
+    >
+      <div class="space-y-4">
+        <p class="text-sm text-slate-600">
+          Search for your suburb and subscribe to daily air quality updates.
+        </p>
+
+        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+          <div ref="suburbInputWrap" class="relative w-full min-w-0">
+            <InputText
+              v-model="suburbSearch"
+              class="w-full min-w-0"
+              placeholder="Enter suburb name"
+              aria-label="Suburb name"
+              aria-autocomplete="list"
+              :aria-expanded="suburbSuggestionsOpen"
+              :aria-controls="
+                suburbSuggestionsOpen ? 'dashboard-suburb-autocomplete-list' : undefined
+              "
+              @focus="handleSuburbFocus"
+              @keydown.esc="closeSuburbSuggestions"
+            />
+          </div>
+          <Dropdown
+            v-model="selectedState"
+            :options="states"
+            class="w-full"
+            placeholder="State"
+            aria-label="State"
+          />
+        </div>
+
+        <Message v-if="addSuburbError" severity="error" :closable="false">
+          {{ addSuburbError }}
+        </Message>
+
+        <Message v-if="addSuburbStatus" severity="success" :closable="false">
+          {{ addSuburbStatus }}
+        </Message>
+
+        <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button label="Cancel" severity="secondary" @click="closeAddSuburbDialog" />
+          <Button
+            label="Subscribe"
+            :disabled="!canSubmitAddSuburb"
+            :loading="addSuburbLoading"
+            @click="handleAddSuburb"
+          />
+        </div>
+      </div>
+    </Dialog>
   </section>
+  <Teleport to="body">
+    <div
+      v-if="suburbSuggestionsOpen"
+      id="dashboard-suburb-autocomplete-list"
+      class="fixed z-[9999] max-h-64 overflow-auto rounded-2xl border border-white/70 bg-white/95 p-2 text-left text-sm shadow-lg backdrop-blur"
+      role="listbox"
+      aria-label="Suburb suggestions"
+      :style="suburbSuggestionStyle"
+    >
+      <p v-if="suburbSuggestionsLoading" class="px-3 py-2 text-sm text-slate-500">
+        Searching suburbs...
+      </p>
+      <p v-else-if="suburbSuggestionsError" class="px-3 py-2 text-sm text-red-600">
+        {{ suburbSuggestionsError }}
+      </p>
+      <p v-else-if="!suburbSuggestions.length" class="px-3 py-2 text-sm text-slate-500">
+        No matches found.
+      </p>
+      <button
+        v-for="item in suburbSuggestions"
+        :key="item.place_id || item.formatted"
+        type="button"
+        class="flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-emerald-50 focus-visible:bg-emerald-50 focus-visible:outline-none"
+        role="option"
+        @mousedown.prevent="selectSuburbSuggestion(item)"
+      >
+        <span class="font-medium text-slate-900">
+          {{ item.address_line1 || item.suburb || item.city || item.formatted }}
+        </span>
+        <span class="text-xs text-slate-500">
+          {{ item.formatted || item.address_line2 || item.state }}
+        </span>
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
+import Dialog from 'primevue/dialog'
+import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 import Password from 'primevue/password'
@@ -320,6 +434,23 @@ const subscriptions = ref([])
 const subscriptionsLoading = ref(true)
 const subscriptionsError = ref('')
 const unsubscribingId = ref(null)
+const addSuburbDialogVisible = ref(false)
+const suburbInputWrap = ref(null)
+const suburbSuggestionStyle = ref({})
+const suburbSearch = ref('')
+const selectedState = ref('')
+const states = ['NSW', 'VIC', 'TAS', 'NT', 'SA', 'WA', 'QLD', 'ACT']
+const suburbSuggestions = ref([])
+const suburbSuggestionsOpen = ref(false)
+const suburbSuggestionsLoading = ref(false)
+const suburbSuggestionsError = ref('')
+const lastAutocompleteQuery = ref('')
+const autocompleteTimer = ref(null)
+const autocompleteAbortController = ref(null)
+const suppressAutocomplete = ref(false)
+const addSuburbError = ref('')
+const addSuburbStatus = ref('')
+const addSuburbLoading = ref(false)
 const notificationError = ref('')
 const notificationStatus = ref('')
 const notificationSending = ref(false)
@@ -360,6 +491,14 @@ const canSubmitProfileUpdate = computed(
     displayNameInput.value.trim() !== authStore.displayName &&
     !isUpdatingProfile.value &&
     authStore.isConfigured
+)
+const canSubmitAddSuburb = computed(
+  () =>
+    authStore.isAuthenticated &&
+    isDbReady.value &&
+    suburbSearch.value.trim().length > 0 &&
+    Boolean(selectedState.value) &&
+    !addSuburbLoading.value
 )
 const canSendNotification = computed(
   () =>
@@ -451,8 +590,295 @@ const MAILGUN_FROM = `Mailgun Sandbox <postmaster@${MAILGUN_DOMAIN}>`
 const MAILGUN_ENDPOINT = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
 const getMailgunApiKey = () => (import.meta.env.VITE_MAILGUN_API || '').trim()
 const getAirQualityUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_BASEURL || ''
+const getLgaLookupUrl = () => import.meta.env.VITE_FIREBASE_LGA_LOOKUP_URL || ''
 const NOTIFICATION_AIR_CACHE_PREFIX = 'notificationAirQualityCache:v2:'
 const NOTIFICATION_AIR_CACHE_TTL_MS = 60 * 60 * 1000
+const SUBURB_AUTOCOMPLETE_CACHE_PREFIX = 'geoapify:suburbAutocomplete:v1:'
+const SUBURB_AUTOCOMPLETE_MIN_CHARS = 2
+const SUBURB_AUTOCOMPLETE_LIMIT = 8
+
+// Normalize an LGA name for deterministic subscription document IDs.
+const toLgaSlug = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+// Extract a display-friendly LGA name from lookup results.
+const getLgaDisplayName = (results) => {
+  if (!Array.isArray(results) || results.length === 0) {
+    return ''
+  }
+  const first = results[0]
+  const raw = typeof first?.name === 'string' ? first.name : ''
+  if (!raw) {
+    return ''
+  }
+  const primary = raw.split(',')[0]?.trim()
+  return primary || raw
+}
+
+const readAutocompleteCache = (cacheKey) => {
+  let raw
+  try {
+    raw = localStorage.getItem(cacheKey)
+  } catch {
+    return null
+  }
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (!Array.isArray(parsed.data)) {
+      return null
+    }
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+const writeAutocompleteCache = (cacheKey, data) => {
+  const payload = JSON.stringify({ data })
+  try {
+    localStorage.setItem(cacheKey, payload)
+  } catch {
+    // Skip caching when localStorage is unavailable.
+  }
+}
+
+const getSuburbAutocompleteCacheKey = (query) =>
+  `${SUBURB_AUTOCOMPLETE_CACHE_PREFIX}${query.toLowerCase()}`
+
+const normalizeSuburbQuery = (value) => value.trim()
+
+const closeSuburbSuggestions = () => {
+  suburbSuggestionsOpen.value = false
+}
+
+const openSuburbSuggestions = () => {
+  suburbSuggestionsOpen.value = true
+}
+
+// Fetch and cache suburb autocomplete results.
+const loadSuburbSuggestions = async (rawQuery) => {
+  const query = normalizeSuburbQuery(rawQuery)
+  if (query.length < SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    suburbSuggestions.value = []
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    closeSuburbSuggestions()
+    return
+  }
+
+  const cacheKey = getSuburbAutocompleteCacheKey(query)
+  const cached = readAutocompleteCache(cacheKey)
+  if (cached) {
+    suburbSuggestions.value = cached
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    openSuburbSuggestions()
+    return
+  }
+
+  const apiKey = import.meta.env.VITE_GEOAPIFY_API || ''
+  if (!apiKey) {
+    suburbSuggestionsError.value = 'Missing Geoapify API key.'
+    suburbSuggestionsLoading.value = false
+    openSuburbSuggestions()
+    return
+  }
+
+  if (autocompleteAbortController.value) {
+    autocompleteAbortController.value.abort()
+  }
+  const controller = new AbortController()
+  autocompleteAbortController.value = controller
+
+  suburbSuggestionsLoading.value = true
+  suburbSuggestionsError.value = ''
+  openSuburbSuggestions()
+
+  try {
+    const url = new URL('https://api.geoapify.com/v1/geocode/autocomplete')
+    url.searchParams.set('text', query)
+    url.searchParams.set('format', 'json')
+    url.searchParams.set('filter', 'countrycode:au')
+    url.searchParams.set('type', 'city')
+    url.searchParams.set('limit', String(SUBURB_AUTOCOMPLETE_LIMIT))
+    url.searchParams.set('apiKey', apiKey)
+
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) {
+      throw new Error('Unable to load suburb suggestions.')
+    }
+    const payload = await response.json()
+    const results = Array.isArray(payload?.results) ? payload.results : []
+    suburbSuggestions.value = results
+    writeAutocompleteCache(cacheKey, results)
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return
+    }
+    suburbSuggestionsError.value =
+      error instanceof Error ? error.message : 'Unable to load suburb suggestions.'
+    suburbSuggestions.value = []
+  } finally {
+    suburbSuggestionsLoading.value = false
+  }
+}
+
+const scheduleSuburbAutocomplete = (value) => {
+  if (autocompleteTimer.value) {
+    clearTimeout(autocompleteTimer.value)
+  }
+  const query = normalizeSuburbQuery(value)
+  if (query.length < SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    suburbSuggestions.value = []
+    suburbSuggestionsError.value = ''
+    suburbSuggestionsLoading.value = false
+    closeSuburbSuggestions()
+    return
+  }
+  autocompleteTimer.value = setTimeout(() => {
+    if (query === lastAutocompleteQuery.value) {
+      return
+    }
+    lastAutocompleteQuery.value = query
+    loadSuburbSuggestions(query)
+  }, 250)
+}
+
+const handleSuburbFocus = () => {
+  if (suburbSearch.value.trim().length >= SUBURB_AUTOCOMPLETE_MIN_CHARS) {
+    openSuburbSuggestions()
+  }
+}
+
+const updateSuburbSuggestionPosition = async () => {
+  await nextTick()
+  const el = suburbInputWrap.value
+  if (!el) {
+    return
+  }
+  const rect = el.getBoundingClientRect()
+  suburbSuggestionStyle.value = {
+    left: `${rect.left}px`,
+    top: `${rect.bottom + 8}px`,
+    width: `${rect.width}px`,
+  }
+}
+
+const selectSuburbSuggestion = (item) => {
+  const label =
+    item?.address_line1 ||
+    item?.suburb ||
+    item?.city ||
+    item?.town ||
+    item?.village ||
+    item?.formatted ||
+    ''
+  if (label) {
+    suppressAutocomplete.value = true
+    lastAutocompleteQuery.value = label
+    suburbSearch.value = label
+  }
+  if (!selectedState.value && item?.state_code && states.includes(item.state_code)) {
+    selectedState.value = item.state_code
+  }
+  closeSuburbSuggestions()
+  setTimeout(() => {
+    suppressAutocomplete.value = false
+  }, 0)
+}
+
+const resetAddSuburbForm = () => {
+  suburbSearch.value = ''
+  selectedState.value = ''
+  suburbSuggestions.value = []
+  suburbSuggestionsError.value = ''
+  suburbSuggestionsOpen.value = false
+  addSuburbError.value = ''
+  addSuburbStatus.value = ''
+}
+
+const openAddSuburbDialog = () => {
+  resetAddSuburbForm()
+  addSuburbDialogVisible.value = true
+}
+
+const closeAddSuburbDialog = () => {
+  addSuburbDialogVisible.value = false
+  resetAddSuburbForm()
+}
+
+// Create a subscription doc for the selected suburb.
+const handleAddSuburb = async () => {
+  if (!canSubmitAddSuburb.value) {
+    return
+  }
+  addSuburbError.value = ''
+  addSuburbStatus.value = ''
+  addSuburbLoading.value = true
+
+  const suburbQuery = suburbSearch.value.trim()
+  const state = selectedState.value.trim()
+  const userId = authStore.user?.uid
+
+  if (!userId) {
+    addSuburbError.value = 'Sign in to subscribe to a suburb.'
+    addSuburbLoading.value = false
+    return
+  }
+
+  const lgaLookupUrl = getLgaLookupUrl()
+  if (!lgaLookupUrl) {
+    addSuburbError.value = 'Missing LGA lookup configuration.'
+    addSuburbLoading.value = false
+    return
+  }
+
+  try {
+    const lgaUrl = new URL(lgaLookupUrl)
+    lgaUrl.searchParams.set('suburb', suburbQuery)
+    lgaUrl.searchParams.set('state', state.toUpperCase())
+    const response = await fetch(lgaUrl)
+    if (!response.ok) {
+      throw new Error('Failed to load LGA data.')
+    }
+    const payload = await response.json()
+    const results = payload.data || payload
+    const lgaName = getLgaDisplayName(results)
+    if (!lgaName) {
+      throw new Error('No LGA data found for this suburb.')
+    }
+
+    const docId = `${userId}_${toLgaSlug(lgaName)}`
+    const docRef = doc(db, 'lgaSubscriptions', docId)
+    const existing = await getDoc(docRef)
+    if (existing.exists()) {
+      addSuburbError.value = 'You are already subscribed to this suburb.'
+      return
+    }
+    await setDoc(docRef, {
+      userId,
+      lgaName,
+      lgaSlug: toLgaSlug(lgaName),
+      state,
+      createdAt: serverTimestamp(),
+    })
+    addSuburbStatus.value = `Subscribed to ${lgaName}.`
+    addSuburbDialogVisible.value = false
+  } catch (error) {
+    addSuburbError.value = error instanceof Error ? error.message : 'Unable to subscribe.'
+  } finally {
+    addSuburbLoading.value = false
+  }
+}
 
 // Format a cooldown duration for the send notification helper text.
 const formatCooldown = (durationMs) => {
@@ -1062,6 +1488,15 @@ onBeforeUnmount(() => {
     clearInterval(notificationIntervalId)
     notificationIntervalId = null
   }
+  if (autocompleteTimer.value) {
+    clearTimeout(autocompleteTimer.value)
+    autocompleteTimer.value = null
+  }
+  if (autocompleteAbortController.value) {
+    autocompleteAbortController.value.abort()
+  }
+  window.removeEventListener('resize', updateSuburbSuggestionPosition)
+  window.removeEventListener('scroll', updateSuburbSuggestionPosition, true)
 })
 
 watch(
@@ -1077,9 +1512,57 @@ watch(
   }
 )
 watch(
+  () => suburbSearch.value,
+  (value) => {
+    if (addSuburbStatus.value) {
+      addSuburbStatus.value = ''
+    }
+    if (addSuburbError.value) {
+      addSuburbError.value = ''
+    }
+    if (suppressAutocomplete.value) {
+      return
+    }
+    scheduleSuburbAutocomplete(value)
+  }
+)
+watch(
+  () => suburbSuggestionsOpen.value,
+  (value) => {
+    if (value) {
+      updateSuburbSuggestionPosition()
+      window.addEventListener('resize', updateSuburbSuggestionPosition)
+      window.addEventListener('scroll', updateSuburbSuggestionPosition, true)
+    } else {
+      window.removeEventListener('resize', updateSuburbSuggestionPosition)
+      window.removeEventListener('scroll', updateSuburbSuggestionPosition, true)
+    }
+  }
+)
+watch(
+  () => addSuburbDialogVisible.value,
+  (value) => {
+    if (!value) {
+      resetAddSuburbForm()
+    } else {
+      updateSuburbSuggestionPosition()
+    }
+  }
+)
+watch(
   () => authStore.displayName,
   (value) => {
     displayNameInput.value = value || ''
   }
 )
 </script>
+
+<style scoped>
+:deep(.add-suburb-dialog.p-dialog) {
+  overflow: visible;
+}
+
+:deep(.add-suburb-dialog .p-dialog-content) {
+  overflow: visible;
+}
+</style>
