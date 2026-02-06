@@ -1,24 +1,9 @@
-<script setup lang="ts">
+<script setup>
 import { defineComponent, h } from 'vue'
 import Accordion from 'primevue/accordion'
 import AccordionContent from 'primevue/accordioncontent'
 import AccordionHeader from 'primevue/accordionheader'
 import AccordionPanel from 'primevue/accordionpanel'
-
-type IconProps = { stroke?: string }
-
-type Row = {
-  key: string
-  level: string
-  aqiRange: string
-  pmRange: string
-  recommendation: string
-  bg: string
-  icon: any
-  iconBg: string
-  iconBorder: string
-  iconStroke: string
-}
 
 // Static pollutant explainers shown in the knowledge accordion.
 const pollutantPanels = [
@@ -73,7 +58,7 @@ const pollutantPanels = [
  * Inline SVG icons (outline head + expression) in the same human-face style.
  * If you provide the original SVGs, we can replace these to match 1:1.
  */
-const FaceGood = defineComponent<IconProps>({
+const FaceGood = defineComponent({
   name: 'FaceGood',
   props: { stroke: { type: String, default: '#2B7A2F' } },
   setup(props) {
@@ -116,7 +101,7 @@ const FaceGood = defineComponent<IconProps>({
   },
 })
 
-const FaceModerate = defineComponent<IconProps>({
+const FaceModerate = defineComponent({
   name: 'FaceModerate',
   props: { stroke: { type: String, default: '#8A6A00' } },
   setup(props) {
@@ -159,7 +144,7 @@ const FaceModerate = defineComponent<IconProps>({
   },
 })
 
-const FaceSensitive = defineComponent<IconProps>({
+const FaceSensitive = defineComponent({
   name: 'FaceSensitive',
   props: { stroke: { type: String, default: '#8A3A00' } },
   setup(props) {
@@ -202,7 +187,7 @@ const FaceSensitive = defineComponent<IconProps>({
   },
 })
 
-const FaceUnhealthyMask = defineComponent<IconProps>({
+const FaceUnhealthyMask = defineComponent({
   name: 'FaceUnhealthyMask',
   props: { stroke: { type: String, default: '#6B0000' } },
   setup(props) {
@@ -257,7 +242,7 @@ const FaceUnhealthyMask = defineComponent<IconProps>({
   },
 })
 
-const FaceVeryUnhealthy = defineComponent<IconProps>({
+const FaceVeryUnhealthy = defineComponent({
   name: 'FaceVeryUnhealthy',
   props: { stroke: { type: String, default: '#2B0A4E' } },
   setup(props) {
@@ -300,7 +285,7 @@ const FaceVeryUnhealthy = defineComponent<IconProps>({
   },
 })
 
-const FaceHazardousCough = defineComponent<IconProps>({
+const FaceHazardousCough = defineComponent({
   name: 'FaceHazardousCough',
   props: { stroke: { type: String, default: '#1F0A10' } },
   setup(props) {
@@ -355,7 +340,7 @@ const FaceHazardousCough = defineComponent<IconProps>({
   },
 })
 
-const rows: Row[] = [
+const rows = [
   {
     key: 'good',
     level: 'Good',
