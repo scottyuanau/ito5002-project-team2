@@ -9,7 +9,26 @@
         <p class="text-xs text-slate-500">Current: {{ currentLabel }}</p>
       </div>
       <div class="mt-3 h-64 w-full">
-        <div ref="pm25GaugeContainer" class="h-full w-full"></div>
+        <div class="group relative h-full w-full">
+          <div ref="pm25GaugeContainer" class="h-full w-full"></div>
+          <div
+            v-if="showGaugeInfo"
+            class="absolute left-1/2 top-4 w-[260px] -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-3 text-left text-xs text-slate-600 opacity-0 shadow-lg backdrop-blur transition duration-200 group-hover:translate-y-1 group-hover:opacity-100"
+            role="tooltip"
+          >
+            <p class="font-semibold text-slate-900">
+              <i class="pi pi-exclamation-circle mr-1 text-slate-400"></i>
+              PM2.5 is the primary measure of air quality.
+            </p>
+            <p class="mt-1">
+              Go to the
+              <RouterLink to="/knowledge" class="font-medium text-slate-900 underline">
+                knowledge base
+              </RouterLink>
+              for details.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
     <div class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
@@ -75,6 +94,10 @@ const props = defineProps({
   layout: {
     type: String,
     default: 'stacked',
+  },
+  showGaugeInfo: {
+    type: Boolean,
+    default: false,
   },
 })
 
