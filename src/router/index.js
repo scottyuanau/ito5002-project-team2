@@ -8,6 +8,7 @@ import DashboardView from '../views/DashboardView.vue'
 import CompareView from '../views/CompareView.vue'
 import ContactView from '../views/ContactView.vue'
 import PlantTipsView from '../views/PlantTipsView.vue' // 👈 make sure this path exists
+import SustainableTipsView from '../views/SustainableTipsView.vue'
 import KnowledgeView from '../views/KnowledgeView.vue'
 import NotFoundView from '../views/NotFoundView.vue'
 
@@ -56,6 +57,11 @@ const router = createRouter({
       path: '/plant-tips',
       name: 'plant-tips',
       component: PlantTipsView,
+    },
+    {
+      path: '/sustainable-tips',
+      name: 'sustainable-tips',
+      component: SustainableTipsView,
     },
 
     // ⭐ FIXED: suburb route is now /suburb/:suburb (not just /:suburb)

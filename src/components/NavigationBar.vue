@@ -80,6 +80,15 @@ const items = computed(() => [
     },
   },
   {
+    label: 'Sustainable Tips',
+    icon: 'pi pi-globe',
+    command: () => {
+      if (route.path !== '/sustainable-tips') {
+        router.push('/sustainable-tips')
+      }
+    },
+  },
+  {
     label: 'Contact',
     icon: 'pi pi-envelope',
     command: () => {
