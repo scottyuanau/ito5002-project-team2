@@ -292,6 +292,7 @@ const carouselBreakpoints = [
 
 const canSearch = computed(() => suburb.value.trim().length > 0 && selectedState.value)
 const locationLabel = ref('your area')
+const locationState = ref('')
 const locationLoading = ref(false)
 const locationError = ref('')
 const airQualityLoading = ref(false)
@@ -322,6 +323,16 @@ const SUBURB_AUTOCOMPLETE_CACHE_PREFIX = 'geoapify:suburbAutocomplete:v1:'
 const SUBURB_AUTOCOMPLETE_MIN_CHARS = 2
 const SUBURB_AUTOCOMPLETE_LIMIT = 8
 const HOME_FOLLOWED_SUBURBS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const AU_STATE_NAME_TO_CODE = {
+  'new south wales': 'NSW',
+  victoria: 'VIC',
+  queensland: 'QLD',
+  'western australia': 'WA',
+  'south australia': 'SA',
+  tasmania: 'TAS',
+  'australian capital territory': 'ACT',
+  'northern territory': 'NT',
+}
 
 const greetingName = computed(() => {
   const raw = (authStore.displayName || '').trim()
@@ -536,17 +547,7 @@ const normalizeStateSelection = (item) => {
     return code
   }
   const name = typeof item?.state === 'string' ? item.state.trim().toLowerCase() : ''
-  const map = {
-    'new south wales': 'NSW',
-    'victoria': 'VIC',
-    'queensland': 'QLD',
-    'western australia': 'WA',
-    'south australia': 'SA',
-    'tasmania': 'TAS',
-    'australian capital territory': 'ACT',
-    'northern territory': 'NT',
-  }
-  return map[name] || ''
+  return AU_STATE_NAME_TO_CODE[name] || ''
 }
 
 const closeSuburbSuggestions = () => {
@@ -700,6 +701,51 @@ const getLocationLabelFromPayload = (payload) => {
     address.county ||
     address.state ||
     'your area'
+  )
+}
+
+// Normalize a state value into a known Australian state code.
+const normalizeStateCode = (value) => {
+  if (typeof value !== 'string') {
+    return ''
+  }
+  const normalized = value.trim()
+  if (!normalized) {
+    return ''
+  }
+  const upper = normalized.toUpperCase()
+  if (states.includes(upper)) {
+    return upper
+  }
+  return AU_STATE_NAME_TO_CODE[normalized.toLowerCase()] || ''
+}
+
+// Extract an Australian state code from reverse-geocode payload details.
+const getLocationStateFromPayload = (payload) => {
+  const address = payload?.address || {}
+  return normalizeStateCode(address.state_code || address.state || '')
+}
+
+// Normalize suburb labels for case-insensitive comparison.
+const normalizeLocationLabel = (value) => value.trim().toLowerCase()
+
+// Match the detected location against cards shown in the popular-cities section.
+const findPopularSuburbMatch = ({ label, state }) => {
+  const normalizedLabel = normalizeLocationLabel(label)
+  if (!normalizedLabel) {
+    return null
+  }
+  return (
+    popularSuburbs.find((item) => {
+      const isSameLabel = normalizeLocationLabel(item.title) === normalizedLabel
+      if (!isSameLabel) {
+        return false
+      }
+      if (!state) {
+        return true
+      }
+      return item.state === state
+    }) || null
   )
 }
 
@@ -1138,6 +1184,7 @@ const fetchPopularSuburbPm25 = async ({ suburbName, state, cacheKey }) => {
   airUrl.searchParams.set('state', state)
   airUrl.searchParams.set('current', 'pm2_5')
   airUrl.searchParams.set('hourly', 'pm2_5')
+  airUrl.searchParams.set('past_days', '92')
   airUrl.searchParams.set('timezone', 'auto')
 
   const response = await fetch(airUrl)
@@ -1242,6 +1289,7 @@ const loadLocalAirQuality = async () => {
   locationError.value = ''
   airQualityError.value = ''
   airQualityNotice.value = ''
+  locationState.value = ''
   locationLoading.value = true
   airQualityLoading.value = true
 
@@ -1250,6 +1298,7 @@ const loadLocalAirQuality = async () => {
     position = await getCurrentPosition()
   } catch {
     locationLabel.value = 'Sydney'
+    locationState.value = 'NSW'
     locationLoading.value = false
     try {
       const fallbackLat = -33.869
@@ -1284,6 +1333,7 @@ const loadLocalAirQuality = async () => {
   const cachedLocation = readCacheWithTtl(locationCacheKey, HOME_CACHE_TTL_MS)
   if (cachedLocation?.label) {
     locationLabel.value = cachedLocation.label
+    locationState.value = normalizeStateCode(cachedLocation.state || '')
   } else {
     try {
       const reverseUrl = new URL('https://nominatim.openstreetmap.org/reverse')
@@ -1296,16 +1346,32 @@ const loadLocalAirQuality = async () => {
       if (response.ok) {
         const payload = await response.json()
         const label = getLocationLabelFromPayload(payload)
+        const state = getLocationStateFromPayload(payload)
         locationLabel.value = label
-        writeCache(locationCacheKey, { label })
+        locationState.value = state
+        writeCache(locationCacheKey, { label, state })
       }
     } catch {
       locationLabel.value = 'your area'
+      locationState.value = ''
     }
   }
 
+  const matchedPopularSuburb = findPopularSuburbMatch({
+    label: locationLabel.value,
+    state: locationState.value,
+  })
+
   try {
-    await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
+    if (matchedPopularSuburb) {
+      await loadAirQualityBySuburb({
+        suburbName: matchedPopularSuburb.title,
+        state: matchedPopularSuburb.state,
+        cacheKey: `${HOME_AIR_CACHE_PREFIX}${matchedPopularSuburb.slug}|${matchedPopularSuburb.state}`,
+      })
+    } else {
+      await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
+    }
     await loadPm25HourlyByCoords({ lat, lon, cacheKey: hourlyCacheKey })
   } catch (error) {
     airQualityError.value =
