@@ -8,7 +8,7 @@
         </div>
         <div class="text-right">
           <p class="text-xs text-slate-500">Current: {{ currentLabel }}</p>
-          <p class="text-xs" style="color: #f97316;">WHO recommended daily maximum: 15 {{ unit }}</p>
+          <p class="text-xs" style="color: #f97316;">WHO recommended daily max: 15 {{ unit }}</p>
         </div>
       </div>
       <div class="mt-3 h-64 w-full">
