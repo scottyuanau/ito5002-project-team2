@@ -6,7 +6,10 @@
           <p class="text-sm font-medium text-slate-900">PM2.5 gauge</p>
           <p class="text-xs text-slate-500">Three-month range: {{ rangeLabel }}</p>
         </div>
-        <p class="text-xs text-slate-500">Current: {{ currentLabel }}</p>
+        <div class="text-right">
+          <p class="text-xs text-slate-500">Current: {{ currentLabel }}</p>
+          <p class="text-xs" style="color: #f97316;">WHO recommended daily maximum: 15 {{ unit }}</p>
+        </div>
       </div>
       <div class="mt-3 h-64 w-full">
         <div class="group relative h-full w-full">
@@ -384,6 +387,12 @@ const buildPm25GaugeOptions = ({ min, max, current, unit, color }) => ({
       [0, color],
       [1, color],
     ],
+    plotLines: [{
+      value: 15,
+      width: 3,
+      color: '#f97316',
+      zIndex: 5,
+    }],
   },
   plotOptions: {
     solidgauge: {
