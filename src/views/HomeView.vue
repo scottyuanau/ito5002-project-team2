@@ -690,11 +690,16 @@ const getCurrentPosition = () =>
     })
   })
 
-// Extract a readable suburb/city label from a reverse-geocode payload.
+// Extract a readable location label from reverse-geocode payload, preferring suburb-scale fields.
 const getLocationLabelFromPayload = (payload) => {
   const address = payload?.address || {}
   return (
+    address.neighbourhood ||
+    address.residential ||
+    address.suburb_district ||
     address.suburb ||
+    address.locality ||
+    address.hamlet ||
     address.city ||
     address.town ||
     address.village ||
@@ -724,29 +729,6 @@ const normalizeStateCode = (value) => {
 const getLocationStateFromPayload = (payload) => {
   const address = payload?.address || {}
   return normalizeStateCode(address.state_code || address.state || '')
-}
-
-// Normalize suburb labels for case-insensitive comparison.
-const normalizeLocationLabel = (value) => value.trim().toLowerCase()
-
-// Match the detected location against cards shown in the popular-cities section.
-const findPopularSuburbMatch = ({ label, state }) => {
-  const normalizedLabel = normalizeLocationLabel(label)
-  if (!normalizedLabel) {
-    return null
-  }
-  return (
-    popularSuburbs.find((item) => {
-      const isSameLabel = normalizeLocationLabel(item.title) === normalizedLabel
-      if (!isSameLabel) {
-        return false
-      }
-      if (!state) {
-        return true
-      }
-      return item.state === state
-    }) || null
-  )
 }
 
 // Build daily PM2.5 averages from hourly data for the recommendations panel.
@@ -1340,7 +1322,7 @@ const loadLocalAirQuality = async () => {
       reverseUrl.searchParams.set('format', 'jsonv2')
       reverseUrl.searchParams.set('lat', lat)
       reverseUrl.searchParams.set('lon', lon)
-      reverseUrl.searchParams.set('zoom', '10')
+      reverseUrl.searchParams.set('zoom', '18')
       reverseUrl.searchParams.set('addressdetails', '1')
       const response = await fetch(reverseUrl)
       if (response.ok) {
@@ -1357,21 +1339,8 @@ const loadLocalAirQuality = async () => {
     }
   }
 
-  const matchedPopularSuburb = findPopularSuburbMatch({
-    label: locationLabel.value,
-    state: locationState.value,
-  })
-
   try {
-    if (matchedPopularSuburb) {
-      await loadAirQualityBySuburb({
-        suburbName: matchedPopularSuburb.title,
-        state: matchedPopularSuburb.state,
-        cacheKey: `${HOME_AIR_CACHE_PREFIX}${matchedPopularSuburb.slug}|${matchedPopularSuburb.state}`,
-      })
-    } else {
-      await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
-    }
+    await loadAirQualityByCoords({ lat, lon, cacheKey: airCacheKey })
     await loadPm25HourlyByCoords({ lat, lon, cacheKey: hourlyCacheKey })
   } catch (error) {
     airQualityError.value =
