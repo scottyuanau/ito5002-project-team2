@@ -71,8 +71,8 @@ const items = computed(() => [
   },
   // new Plant Tips menu item
   {
-    label: 'Plant Tips',
-    icon: 'pi pi-apple',
+    label: '🌱 Plant Tips',
+    icon: '',
     command: () => {
       if (route.path !== '/plant-tips') {
         router.push('/plant-tips')
