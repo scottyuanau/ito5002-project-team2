@@ -52,6 +52,10 @@
         </li>
       </ul>
       <ul class="mt-4 space-y-2 text-sm text-slate-600">
+        <li v-if="walkRecommendation" class="flex items-start gap-2">
+          <span>🚶</span>
+          <span>{{ walkRecommendation }}</span>
+        </li>
         <li
           v-for="(recommendation, index) in pm25Recommendations"
           :key="`${pm25Tier.label}-${index}`"
@@ -98,6 +102,10 @@ const props = defineProps({
   showGaugeInfo: {
     type: Boolean,
     default: false,
+  },
+  hourlySeries: {
+    type: Object,
+    default: () => ({ labels: [], historical: [], forecast: [], unit: 'ug/m3' }),
   },
 })
 
@@ -238,6 +246,9 @@ const getPm25MaskAdvice = (tierLabel) => {
 
 const pm25MaskAdvice = computed(() => getPm25MaskAdvice(pm25Tier.value.label))
 
+const WALK_RECOMMENDATION_CACHE_TTL_MS = 60 * 60 * 1000
+const WALK_RECOMMENDATION_CACHE_PREFIX = 'pm25WalkRecommendation:v1:'
+
 const getPm25TierColor = (tierLabel) => {
   if (tierLabel === 'Very Good') {
     return '#22c55e'
@@ -316,6 +327,111 @@ const pm25Recommendations = computed(() => {
     ]
   }
   return [{ emoji: '⚪', text: 'No recommendation available without recent data.' }]
+})
+
+// Keep only finite numeric values from a PM2.5 series.
+const cleanNumericSeries = (values) =>
+  (Array.isArray(values) ? values : []).filter((value) => Number.isFinite(Number(value)))
+
+// Build a deterministic cache key from title and hourly PM2.5 inputs.
+const getWalkRecommendationCacheKey = () => {
+  const labels = Array.isArray(props.hourlySeries?.labels) ? props.hourlySeries.labels : []
+  const historical = cleanNumericSeries(props.hourlySeries?.historical)
+  const forecast = cleanNumericSeries(props.hourlySeries?.forecast)
+  const signature = JSON.stringify({
+    title: props.title || '',
+    labels,
+    historical,
+    forecast,
+  })
+  return `${WALK_RECOMMENDATION_CACHE_PREFIX}${signature}`
+}
+
+// Read a cached recommendation payload with a fixed 1-hour TTL.
+const readWalkRecommendationCache = (cacheKey) => {
+  try {
+    const raw = localStorage.getItem(cacheKey)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    if (typeof parsed.fetchedAt !== 'number' || typeof parsed.text !== 'string') {
+      return null
+    }
+    if (Date.now() - parsed.fetchedAt > WALK_RECOMMENDATION_CACHE_TTL_MS) {
+      localStorage.removeItem(cacheKey)
+      return null
+    }
+    return parsed.text
+  } catch {
+    return null
+  }
+}
+
+// Cache the generated recommendation text for one hour.
+const writeWalkRecommendationCache = (cacheKey, text) => {
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({ fetchedAt: Date.now(), text }))
+  } catch {
+    // Ignore storage failures in restricted browser modes.
+  }
+}
+
+// Convert a label or hour index into a readable time label.
+const resolveTimeLabel = (labels, index) => {
+  const label = labels[index]
+  if (typeof label === 'string' && label.trim()) {
+    return label
+  }
+  const fallbackDate = new Date()
+  fallbackDate.setMinutes(0, 0, 0)
+  fallbackDate.setHours((fallbackDate.getHours() + index) % 24)
+  return fallbackDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// Build a concise walk-time recommendation from recent historical and forecast PM2.5 values.
+const buildWalkRecommendation = () => {
+  const labels = Array.isArray(props.hourlySeries?.labels) ? props.hourlySeries.labels : []
+  const historicalRaw = Array.isArray(props.hourlySeries?.historical) ? props.hourlySeries.historical : []
+  const forecastRaw = Array.isArray(props.hourlySeries?.forecast) ? props.hourlySeries.forecast : []
+  const historical = historicalRaw
+    .map((value, index) => ({ value: Number(value), index }))
+    .filter((item) => Number.isFinite(item.value))
+  const forecast = forecastRaw
+    .map((value, index) => ({ value: Number(value), index }))
+    .filter((item) => Number.isFinite(item.value))
+
+  if (!forecast.length && !historical.length) {
+    return ''
+  }
+
+  if (!forecast.length) {
+    const recentBest = [...historical].sort((a, b) => a.value - b.value)[0]
+    const startTime = resolveTimeLabel(labels, recentBest.index)
+    const endTime = resolveTimeLabel(labels, recentBest.index + 1)
+    return `Best walk time: ${startTime} to ${endTime}.`
+  }
+
+  const bestForecast = [...forecast].sort((a, b) => a.value - b.value)[0]
+  const startTime = resolveTimeLabel(labels, bestForecast.index)
+  const endTime = resolveTimeLabel(labels, bestForecast.index + 1)
+  return `Best walk time: ${startTime} to ${endTime}.`
+}
+
+const walkRecommendation = computed(() => {
+  const cacheKey = getWalkRecommendationCacheKey()
+  const cachedText = readWalkRecommendationCache(cacheKey)
+  if (cachedText) {
+    return cachedText
+  }
+  const text = buildWalkRecommendation()
+  if (text) {
+    writeWalkRecommendationCache(cacheKey, text)
+  }
+  return text
 })
 
 // Derive safe min/max bounds for the PM2.5 gauge when trend data is sparse.

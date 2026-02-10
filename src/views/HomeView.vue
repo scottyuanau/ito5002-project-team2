@@ -104,6 +104,7 @@
           :current-value="pm25CurrentValue"
           :trend-values="pm25TrendValues"
           :unit="pm25Unit"
+          :hourly-series="pm25HourlySeries"
           show-gauge-info
         />
         <div

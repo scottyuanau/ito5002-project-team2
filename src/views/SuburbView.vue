@@ -95,6 +95,7 @@
                 :current-value="pm25CurrentValue"
                 :trend-values="pm25TrendValues"
                 :unit="pm25Unit"
+                :hourly-series="pm25HourlySeries"
               />
               <div class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                 <div>
