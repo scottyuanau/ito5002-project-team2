@@ -391,7 +391,13 @@ const pm25HourlyLoading = ref(false)
 const pm25HourlyError = ref('')
 const pm25HourlyNotice = ref('')
 const pm25HourlyLoaded = ref(false)
-const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
+const pm25HourlySeries = ref({
+  labels: [],
+  timestamps: [],
+  historical: [],
+  forecast: [],
+  unit: 'ug/m3',
+})
 const selectedHeatmapMetric = ref('pm2_5')
 const airQualityRows = ref([
   { key: 'pm10', pollutant: 'PM10', value: 'N/A', unit: 'ug/m3' },
@@ -1019,7 +1025,7 @@ const buildTrendSeries = (payload) => {
 
 // Build a PM2.5 series split into last 12 historical hours and next 12 forecast hours.
 const buildPm25HourlySeries = (payload) => {
-  const fallback = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+  const fallback = { labels: [], timestamps: [], historical: [], forecast: [], unit: 'ug/m3' }
   if (!payload || typeof payload !== 'object') {
     return fallback
   }
@@ -1069,6 +1075,7 @@ const buildPm25HourlySeries = (payload) => {
 
   return {
     labels: combinedEntries.map((entry) => formatHourLabel(entry.timeValue)),
+    timestamps: combinedEntries.map((entry) => entry.timeValue),
     historical: combinedEntries.map((entry, index) =>
       index < historicalEntries.length ? entry.value : null,
     ),
@@ -1594,7 +1601,13 @@ const loadPm25HourlyTrend = async () => {
 
   if (!suburbQuery || !state) {
     pm25HourlyError.value = 'Missing suburb or state. Please search again.'
-    pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+    pm25HourlySeries.value = {
+      labels: [],
+      timestamps: [],
+      historical: [],
+      forecast: [],
+      unit: 'ug/m3',
+    }
     return
   }
 
@@ -1643,7 +1656,13 @@ const loadPm25HourlyTrend = async () => {
       pm25HourlyLoaded.value = true
       pm25HourlyNotice.value = buildStaleNotice(staleCache.fetchedAt)
     } else {
-      pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+      pm25HourlySeries.value = {
+        labels: [],
+        timestamps: [],
+        historical: [],
+        forecast: [],
+        unit: 'ug/m3',
+      }
       pm25HourlyError.value = error instanceof Error ? error.message : 'Unexpected error.'
     }
   } finally {
@@ -1655,7 +1674,13 @@ const resetPm25HourlyState = () => {
   pm25HourlyLoaded.value = false
   pm25HourlyError.value = ''
   pm25HourlyNotice.value = ''
-  pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+  pm25HourlySeries.value = {
+    labels: [],
+    timestamps: [],
+    historical: [],
+    forecast: [],
+    unit: 'ug/m3',
+  }
 }
 
 const loadHistoricalWeather = async () => {

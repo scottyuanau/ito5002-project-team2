@@ -305,7 +305,13 @@ const pm25Unit = ref('ug/m3')
 const pm25HourlyLoading = ref(false)
 const pm25HourlyError = ref('')
 const pm25HourlyNotice = ref('')
-const pm25HourlySeries = ref({ labels: [], historical: [], forecast: [], unit: 'ug/m3' })
+const pm25HourlySeries = ref({
+  labels: [],
+  timestamps: [],
+  historical: [],
+  forecast: [],
+  unit: 'ug/m3',
+})
 const showScrollCue = ref(true)
 const popularSuburbPm25 = ref({})
 const followedSuburbs = ref([])
@@ -788,7 +794,7 @@ const buildDailyPm25Series = (payload) => {
 
 // Build a PM2.5 series split into last 12 historical hours and next 12 forecast hours.
 const buildPm25HourlySeries = (payload) => {
-  const fallback = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+  const fallback = { labels: [], timestamps: [], historical: [], forecast: [], unit: 'ug/m3' }
   const hourly = payload?.hourly || {}
   const hourlyUnits = payload?.hourly_units || {}
   const timeList = Array.isArray(hourly.time) ? hourly.time : []
@@ -835,6 +841,7 @@ const buildPm25HourlySeries = (payload) => {
 
   return {
     labels,
+    timestamps: combinedEntries.map((entry) => entry.timeValue),
     historical: combinedEntries.map((entry, index) =>
       index < historicalEntries.length ? entry.value : null,
     ),
@@ -1105,7 +1112,13 @@ const loadPm25HourlyByCoords = async ({ lat, lon, cacheKey }) => {
       pm25HourlySeries.value = staleCache.data
       pm25HourlyNotice.value = buildStaleNotice(staleCache.fetchedAt)
     } else {
-      pm25HourlySeries.value = { labels: [], historical: [], forecast: [], unit: 'ug/m3' }
+      pm25HourlySeries.value = {
+        labels: [],
+        timestamps: [],
+        historical: [],
+        forecast: [],
+        unit: 'ug/m3',
+      }
       pm25HourlyError.value = error instanceof Error ? error.message : 'Unexpected error.'
     }
   } finally {

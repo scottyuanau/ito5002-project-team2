@@ -105,7 +105,7 @@ const props = defineProps({
   },
   hourlySeries: {
     type: Object,
-    default: () => ({ labels: [], historical: [], forecast: [], unit: 'ug/m3' }),
+    default: () => ({ labels: [], timestamps: [], historical: [], forecast: [], unit: 'ug/m3' }),
   },
 })
 
@@ -329,18 +329,23 @@ const pm25Recommendations = computed(() => {
   return [{ emoji: '⚪', text: 'No recommendation available without recent data.' }]
 })
 
-// Keep only finite numeric values from a PM2.5 series.
-const cleanNumericSeries = (values) =>
-  (Array.isArray(values) ? values : []).filter((value) => Number.isFinite(Number(value)))
+// Normalize PM2.5 values for cache-key generation while preserving null gaps by index.
+const normalizeSeriesValues = (values) =>
+  (Array.isArray(values) ? values : []).map((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : null
+  })
 
 // Build a deterministic cache key from title and hourly PM2.5 inputs.
 const getWalkRecommendationCacheKey = () => {
   const labels = Array.isArray(props.hourlySeries?.labels) ? props.hourlySeries.labels : []
-  const historical = cleanNumericSeries(props.hourlySeries?.historical)
-  const forecast = cleanNumericSeries(props.hourlySeries?.forecast)
+  const timestamps = Array.isArray(props.hourlySeries?.timestamps) ? props.hourlySeries.timestamps : []
+  const historical = normalizeSeriesValues(props.hourlySeries?.historical)
+  const forecast = normalizeSeriesValues(props.hourlySeries?.forecast)
   const signature = JSON.stringify({
     title: props.title || '',
     labels,
+    timestamps,
     historical,
     forecast,
   })
@@ -392,32 +397,99 @@ const resolveTimeLabel = (labels, index) => {
   return fallbackDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-// Build a concise walk-time recommendation from recent historical and forecast PM2.5 values.
+// Parse a time-like value into a timestamp in milliseconds.
+const toTimestamp = (value) => {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return null
+  }
+  const parsed = new Date(value).getTime()
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+// Treat 11:00 PM to 3:59 AM as sleep hours and exclude them from walk windows.
+const isSleepHour = (timestamp) => {
+  const hour = new Date(timestamp).getHours()
+  return hour === 23 || hour < 4
+}
+
+// Build a concise walk-time recommendation from the last 12h history + next 12h forecast.
 const buildWalkRecommendation = () => {
   const labels = Array.isArray(props.hourlySeries?.labels) ? props.hourlySeries.labels : []
+  const timestamps = Array.isArray(props.hourlySeries?.timestamps) ? props.hourlySeries.timestamps : []
   const historicalRaw = Array.isArray(props.hourlySeries?.historical) ? props.hourlySeries.historical : []
   const forecastRaw = Array.isArray(props.hourlySeries?.forecast) ? props.hourlySeries.forecast : []
-  const historical = historicalRaw
-    .map((value, index) => ({ value: Number(value), index }))
-    .filter((item) => Number.isFinite(item.value))
-  const forecast = forecastRaw
-    .map((value, index) => ({ value: Number(value), index }))
-    .filter((item) => Number.isFinite(item.value))
-
-  if (!forecast.length && !historical.length) {
+  const total = Math.max(labels.length, timestamps.length, historicalRaw.length, forecastRaw.length)
+  if (total < 2) {
     return ''
   }
 
-  if (!forecast.length) {
-    const recentBest = [...historical].sort((a, b) => a.value - b.value)[0]
-    const startTime = resolveTimeLabel(labels, recentBest.index)
-    const endTime = resolveTimeLabel(labels, recentBest.index + 1)
-    return `Best walk time: ${startTime} to ${endTime}.`
+  const entries = Array.from({ length: total }, (_, index) => {
+    const historicalValue = Number(historicalRaw[index])
+    const forecastValue = Number(forecastRaw[index])
+    const value = Number.isFinite(historicalValue)
+      ? historicalValue
+      : Number.isFinite(forecastValue)
+        ? forecastValue
+        : null
+    return {
+      index,
+      value,
+      timestamp: toTimestamp(timestamps[index]),
+    }
+  })
+
+  let bestWindow = null
+  for (let index = 0; index < entries.length - 1; index += 1) {
+    const first = entries[index]
+    const second = entries[index + 1]
+    if (!Number.isFinite(first.value) || !Number.isFinite(second.value)) {
+      continue
+    }
+
+    const hasTimestamps = Number.isFinite(first.timestamp) && Number.isFinite(second.timestamp)
+    if (hasTimestamps) {
+      const gap = Math.abs(second.timestamp - first.timestamp)
+      // Guard against malformed or non-hourly data before recommending.
+      if (gap < 45 * 60 * 1000 || gap > 75 * 60 * 1000) {
+        continue
+      }
+      if (isSleepHour(first.timestamp) || isSleepHour(second.timestamp)) {
+        continue
+      }
+    }
+
+    const score = (first.value + second.value) / 2
+    if (
+      !bestWindow ||
+      score < bestWindow.score ||
+      (score === bestWindow.score && first.index < bestWindow.startIndex)
+    ) {
+      bestWindow = {
+        score,
+        startIndex: first.index,
+        firstTimestamp: first.timestamp,
+        secondTimestamp: second.timestamp,
+      }
+    }
   }
 
-  const bestForecast = [...forecast].sort((a, b) => a.value - b.value)[0]
-  const startTime = resolveTimeLabel(labels, bestForecast.index)
-  const endTime = resolveTimeLabel(labels, bestForecast.index + 1)
+  if (!bestWindow) {
+    return ''
+  }
+
+  const startTime = Number.isFinite(bestWindow.firstTimestamp)
+    ? new Date(bestWindow.firstTimestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : resolveTimeLabel(labels, bestWindow.startIndex)
+  const endTime = Number.isFinite(bestWindow.secondTimestamp)
+    ? new Date(bestWindow.secondTimestamp + 60 * 60 * 1000).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : resolveTimeLabel(labels, bestWindow.startIndex + 2)
+
   return `Best walk time: ${startTime} to ${endTime}.`
 }
 
