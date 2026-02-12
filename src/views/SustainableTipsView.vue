@@ -4,7 +4,6 @@ import Button from 'primevue/button'
 
 const router = useRouter()
 
-// Return users to the home page from the sustainable tips screen.
 const goHome = () => {
   router.push({ name: 'home' })
 }
@@ -98,14 +97,15 @@ const sustainableTips = [
         />
       </div>
 
-      <header class="mb-8">
+      <!--  Center header + paragraph -->
+      <header class="mb-8 text-center">
         <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">
           For individuals at home
         </p>
         <h1 class="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">
           Sustainable practices for cleaner air
         </h1>
-        <p class="mt-3 max-w-3xl text-slate-600">
+        <p class="mt-3 max-w-3xl mx-auto text-slate-600">
           Our daily actions can have a bigger impact than you might think. Adopting sustainable
           practices at home is a great way to positively contribute to better air quality globally.
         </p>
