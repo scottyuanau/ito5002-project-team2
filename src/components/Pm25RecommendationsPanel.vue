@@ -51,7 +51,7 @@
           <span>{{ pm25MaskAdvice.text }}</span>
         </li>
       </ul>
-      <ul class="mt-4 space-y-2 text-sm text-slate-600">
+      <ul class="mt-4 space-y-2 text-left text-sm text-slate-600">
         <li v-if="walkRecommendation" class="flex items-start gap-2">
           <span>🚶</span>
           <span>{{ walkRecommendation }}</span>
