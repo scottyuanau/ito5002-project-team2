@@ -11,6 +11,8 @@ const goHome = () => {
 const sustainableTips = [
   {
     title: 'Avoid disposable items',
+    image: '/Sustainable_Practices/Disposable_Items.jpg',
+    imageAlt: 'Reusable items and reducing disposable waste',
     description:
       'While disposable items like coffee cups, takeaway containers, plastic bottles and other single-use items are convenient, they create a large amount of waste which contributes to air pollution, especially through incineration. Disposable items are also resource-heavy to produce.',
     fact:
@@ -20,6 +22,8 @@ const sustainableTips = [
   },
   {
     title: 'Reduce food waste',
+    image: '/Sustainable_Practices/Reduce_Food_Waste.jpg',
+    imageAlt: 'Reducing food waste at home',
     description:
       'Reducing food waste can improve air quality by decreasing emissions from landfill, transport and agriculture.',
     fact:
@@ -29,6 +33,8 @@ const sustainableTips = [
   },
   {
     title: 'Buy products with less packaging',
+    image: '/Sustainable_Practices/Less_Packaging.jpg',
+    imageAlt: 'Choosing products with less packaging',
     description:
       'Product packaging is a major contributor to plastic waste. Plastics can lead to air pollution during manufacturing and from incineration.',
     fact:
@@ -38,6 +44,8 @@ const sustainableTips = [
   },
   {
     title: 'Recycle well',
+    image: '/Sustainable_Practices/Recycle_Well.jpg',
+    imageAlt: 'Recycling correctly and responsibly',
     description:
       'Recycling helps beyond landfill reduction. It can reduce air and water pollution while conserving energy.',
     fact:
@@ -47,6 +55,8 @@ const sustainableTips = [
   },
   {
     title: 'Buy better and shop locally',
+    image: '/Sustainable_Practices/Buy_Better.jpg',
+    imageAlt: 'Shopping locally and buying sustainable products',
     description:
       'Spending habits can unintentionally support pollution, waste, habitat destruction, animal cruelty and unfair labor practices. Conscious purchasing can reduce this impact.',
     fact:
@@ -56,6 +66,8 @@ const sustainableTips = [
   },
   {
     title: 'Be water conscious',
+    image: '/Sustainable_Practices/Water_Conscious.jpg',
+    imageAlt: 'Reducing water use at home',
     description:
       'Reducing water use can improve air quality by lowering demand for water treatment, pumping and heating, which are energy-intensive.',
     fact:
@@ -65,6 +77,8 @@ const sustainableTips = [
   },
   {
     title: 'Reduce energy use',
+    image: '/Sustainable_Practices/Reduce_Energy_Use.jpg',
+    imageAlt: 'Reducing household energy use',
     description:
       'Lower energy use at home reduces utility costs and environmental harm by decreasing demand on power plants and lowering pollutant emissions.',
     fact:
@@ -74,6 +88,8 @@ const sustainableTips = [
   },
   {
     title: 'Make informed transport decisions',
+    image: '/Sustainable_Practices/Transport_Decisions.jpg',
+    imageAlt: 'Walking, cycling, and using public transport',
     description:
       'Changing transport choices can directly improve air quality by reducing pollutant and particulate emissions.',
     fact:
@@ -97,7 +113,7 @@ const sustainableTips = [
         />
       </div>
 
-      <!--  Center header + paragraph -->
+      <!-- Center header + paragraph -->
       <header class="mb-8 text-center">
         <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">
           For individuals at home
@@ -111,6 +127,7 @@ const sustainableTips = [
         </p>
       </header>
 
+      <!-- Tip cards -->
       <section class="grid gap-6 md:grid-cols-2">
         <article
           v-for="tip in sustainableTips"
@@ -118,16 +135,42 @@ const sustainableTips = [
           class="flex flex-col justify-between rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
         >
           <div>
-            <h2 class="text-xl font-semibold text-slate-900">{{ tip.title }}</h2>
+            <h2 class="text-xl font-semibold text-slate-900">
+              {{ tip.title }}
+            </h2>
+
+            <!-- Image under title -->
+            <img
+              v-if="tip.image"
+              :src="tip.image"
+              :alt="tip.imageAlt || tip.title"
+              class="mt-3 h-28 w-full rounded-xl object-cover bg-slate-100"
+              loading="lazy"
+            />
+
             <p class="mt-3 text-sm text-slate-700">{{ tip.description }}</p>
+
             <p class="mt-3 text-xs text-slate-500">
               <span class="font-semibold">Fact:</span> {{ tip.fact }}
             </p>
           </div>
+
           <p class="mt-4 text-xs text-slate-500">
             <span class="font-semibold">What can I do?</span> {{ tip.action }}
           </p>
         </article>
+      </section>
+
+      <!-- Realistic note card (matches Plant Tips style) -->
+      <section class="mt-10 bg-slate-900 text-slate-50 rounded-2xl p-6 text-center">
+        <h2 class="text-lg font-semibold">
+          A realistic note on sustainable living
+        </h2>
+        <p class="mt-2 text-sm max-w-3xl mx-auto">
+          Small daily changes can contribute to cleaner air, but meaningful improvements require collective action
+          from individuals, communities, businesses and governments. Sustainable living is a shared responsibility —
+          every step helps, even if progress feels gradual.
+        </p>
       </section>
     </section>
   </main>
