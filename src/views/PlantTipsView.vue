@@ -94,7 +94,7 @@ const plantTips = [
         />
       </div>
 
-      <!-- ✅ Centered Header -->
+      <!--  Centered Header -->
       <header class="mb-8 text-center">
         <p class="text-xs font-semibold tracking-wide text-emerald-600 uppercase">
           For individuals at home
@@ -104,7 +104,7 @@ const plantTips = [
           Indoor plants that support healthier air at home
         </h1>
 
-        <!-- ✅ Centered paragraph + centered max width -->
+        <!-- Centered paragraph + centered max width -->
         <p class="mt-3 text-slate-600 max-w-3xl mx-auto">
           These low-maintenance plants won’t “fix” pollution on their own, but they can help
           reduce dust, improve humidity and remind you to make more air-friendly choices.
@@ -123,7 +123,7 @@ const plantTips = [
               {{ plant.name }}
             </h2>
 
-            <!-- ✅ Image under the title -->
+            <!--  Image under the title -->
             <img
               v-if="plant.image"
               :src="plant.image"
