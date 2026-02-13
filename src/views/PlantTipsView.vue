@@ -8,10 +8,13 @@ const goHome = () => {
   router.push({ name: 'home' })
 }
 
+
 const plantTips = [
   {
     name: 'Snake Plant',
     nickname: 'Sansevieria / Mother-in-law’s Tongue',
+    image: '/Plants_Air_Scape/Snake_Plant.jpg',
+    imageAlt: 'Snake Plant (Sansevieria)',
     benefit:
       'Tolerates low light and irregular watering, good for bedrooms and small apartments.',
     bestFor:
@@ -22,6 +25,8 @@ const plantTips = [
   },
   {
     name: 'Spider Plant',
+    image: '/Plants_Air_Scape/Spider_Plant.jpg',
+    imageAlt: 'Spider Plant',
     benefit:
       'Great starter plant that can help trap dust and improve the feel of stuffy corners.',
     bestFor: 'Desks, shelves and hanging pots in bright rooms without direct harsh sun.',
@@ -31,6 +36,8 @@ const plantTips = [
   },
   {
     name: 'Peace Lily',
+    image: '/Plants_Air_Scape/Peace_Lily_Plant.jpg',
+    imageAlt: 'Peace Lily',
     benefit:
       'Can add a bit of humidity and help reduce some indoor pollutants when combined with good ventilation.',
     bestFor:
@@ -41,6 +48,8 @@ const plantTips = [
   },
   {
     name: 'Areca Palm',
+    image: '/Plants_Air_Scape/Areca_Palm_Plant.jpg',
+    imageAlt: 'Areca Palm',
     benefit: 'Acts like a gentle natural humidifier and can catch dust on its fronds.',
     bestFor: 'Corners of living rooms, near windows with bright but filtered light.',
     care:
@@ -49,6 +58,8 @@ const plantTips = [
   },
   {
     name: 'Pothos (Devil’s Ivy)',
+    image: '/Plants_Air_Scape/Pothos_Plant.jpg',
+    imageAlt: 'Pothos (Devil’s Ivy)',
     benefit:
       'Fast-growing vine that can soften harsh indoor spaces and help trap particles on its leaves.',
     bestFor:
@@ -58,6 +69,8 @@ const plantTips = [
   },
   {
     name: 'Aloe Vera',
+    image: '/Plants_Air_Scape/Aloe_Vera_Plant.jpg',
+    imageAlt: 'Aloe Vera',
     benefit:
       'Succulent that needs little water and also offers soothing gel for minor skin irritation.',
     bestFor: 'Sunny windowsills, kitchens or bathrooms with bright light.',
@@ -81,15 +94,18 @@ const plantTips = [
         />
       </div>
 
-      <!-- Header -->
-      <header class="mb-8">
+      <!-- ✅ Centered Header -->
+      <header class="mb-8 text-center">
         <p class="text-xs font-semibold tracking-wide text-emerald-600 uppercase">
           For individuals at home
         </p>
+
         <h1 class="mt-2 text-3xl sm:text-4xl font-bold text-slate-900">
           Indoor plants that support healthier air at home
         </h1>
-        <p class="mt-3 text-slate-600 max-w-3xl">
+
+        <!-- ✅ Centered paragraph + centered max width -->
+        <p class="mt-3 text-slate-600 max-w-3xl mx-auto">
           These low-maintenance plants won’t “fix” pollution on their own, but they can help
           reduce dust, improve humidity and remind you to make more air-friendly choices.
         </p>
@@ -107,9 +123,18 @@ const plantTips = [
               {{ plant.name }}
             </h2>
 
+            <!-- ✅ Image under the title -->
+            <img
+              v-if="plant.image"
+              :src="plant.image"
+              :alt="plant.imageAlt || plant.name"
+              class="mt-3 h-24 w-full rounded-xl object-cover"
+              loading="lazy"
+            />
+
             <p
               v-if="plant.nickname"
-              class="mt-1 text-xs font-medium text-slate-500 uppercase tracking-wide"
+              class="mt-3 text-xs font-medium text-slate-500 uppercase tracking-wide"
             >
               {{ plant.nickname }}
             </p>
