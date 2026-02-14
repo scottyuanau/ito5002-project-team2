@@ -114,6 +114,7 @@ const props = defineProps({
 
 const pm25GaugeContainer = ref(null)
 const pm25GaugeChart = ref(null)
+const WHO_PM25_DAILY_MAX = 15
 
 const layoutClasses = computed(() =>
   props.layout === 'split'
@@ -133,7 +134,9 @@ const computeSeriesStats = (values) => {
   if (!Array.isArray(values) || values.length === 0) {
     return null
   }
-  const cleaned = values.filter((value) => Number.isFinite(value))
+  const cleaned = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
   if (cleaned.length === 0) {
     return null
   }
@@ -515,20 +518,23 @@ const getPm25GaugeBounds = (stats, currentValue) => {
   const min = Number(stats?.minimum)
   const max = Number(stats?.maximum)
   const current = Number(currentValue)
+  const whoMax = WHO_PM25_DAILY_MAX
   const hasStats = Number.isFinite(min) && Number.isFinite(max)
   const hasCurrent = Number.isFinite(current)
 
   if (!hasStats && !hasCurrent) {
-    return { min: 0, max: 1 }
+    return { min: 0, max: whoMax }
   }
 
   const resolvedMin = hasStats ? min : current
   const resolvedMax = hasStats ? max : current
-  const boundedMin = hasCurrent ? Math.min(resolvedMin, current) : resolvedMin
-  const boundedMax = hasCurrent ? Math.max(resolvedMax, current) : resolvedMax
+  const boundedMin = hasCurrent ? Math.min(resolvedMin, current, 0) : Math.min(resolvedMin, 0)
+  const boundedMax = hasCurrent
+    ? Math.max(resolvedMax, current, whoMax)
+    : Math.max(resolvedMax, whoMax)
 
   if (boundedMax <= boundedMin) {
-    return { min: boundedMin, max: boundedMin + 1 }
+    return { min: boundedMin, max: boundedMin + 1 + whoMax }
   }
 
   return { min: boundedMin, max: boundedMax }
@@ -576,7 +582,7 @@ const buildPm25GaugeOptions = ({ min, max, current, unit, color }) => ({
       [1, color],
     ],
     plotLines: [{
-      value: 15,
+      value: WHO_PM25_DAILY_MAX,
       width: 3,
       color: '#f97316',
       zIndex: 5,
