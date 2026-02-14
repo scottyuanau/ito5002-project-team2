@@ -178,12 +178,30 @@
                   <template #body="{ data }">
                     <div class="flex items-center gap-2">
                       <span>{{ data.pollutant }}</span>
-                      <i
+                      <button
                         v-if="pollutantDescriptions[data.key]"
-                        v-tooltip.bottom="pollutantDescriptions[data.key]"
-                        class="pi pi-question-circle text-slate-400 cursor-pointer"
-                        aria-hidden="true"
-                      />
+                        :id="`${getMetricTooltipKey('air', data.key)}-button`"
+                        type="button"
+                        data-metric-tooltip="true"
+                        class="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                        :aria-expanded="isMetricTooltipOpen('air', data.key)"
+                        :aria-controls="`${getMetricTooltipKey('air', data.key)}-panel`"
+                        :aria-label="`Show help for ${data.pollutant}`"
+                        @mouseenter="
+                          openMetricTooltip('air', data.key, pollutantDescriptions[data.key], $event)
+                        "
+                        @click.stop="
+                          toggleMetricTooltip('air', data.key, pollutantDescriptions[data.key], $event)
+                        "
+                        @keydown.esc.prevent.stop="closeMetricTooltip"
+                        @focus="
+                          openMetricTooltip('air', data.key, pollutantDescriptions[data.key], $event)
+                        "
+                        @mouseleave="scheduleCloseMetricTooltip"
+                        @blur="scheduleCloseMetricTooltip"
+                      >
+                        <i class="pi pi-question-circle" aria-hidden="true" />
+                      </button>
                     </div>
                   </template>
                 </Column>
@@ -277,12 +295,30 @@
                   <template #body="{ data }">
                     <div class="flex items-center gap-2">
                       <span>{{ data.metric }}</span>
-                      <i
+                      <button
                         v-if="greenMetricDescriptions[data.key]"
-                        v-tooltip.bottom="greenMetricDescriptions[data.key]"
-                        class="pi pi-question-circle text-slate-400 cursor-pointer"
-                        aria-hidden="true"
-                      />
+                        :id="`${getMetricTooltipKey('green', data.key)}-button`"
+                        type="button"
+                        data-metric-tooltip="true"
+                        class="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                        :aria-expanded="isMetricTooltipOpen('green', data.key)"
+                        :aria-controls="`${getMetricTooltipKey('green', data.key)}-panel`"
+                        :aria-label="`Show help for ${data.metric}`"
+                        @mouseenter="
+                          openMetricTooltip('green', data.key, greenMetricDescriptions[data.key], $event)
+                        "
+                        @click.stop="
+                          toggleMetricTooltip('green', data.key, greenMetricDescriptions[data.key], $event)
+                        "
+                        @keydown.esc.prevent.stop="closeMetricTooltip"
+                        @focus="
+                          openMetricTooltip('green', data.key, greenMetricDescriptions[data.key], $event)
+                        "
+                        @mouseleave="scheduleCloseMetricTooltip"
+                        @blur="scheduleCloseMetricTooltip"
+                      >
+                        <i class="pi pi-question-circle" aria-hidden="true" />
+                      </button>
                     </div>
                   </template>
                 </Column>
@@ -335,6 +371,23 @@
         </TabPanel>
       </TabPanels>
     </Tabs>
+
+    <Teleport to="body">
+      <div
+        v-if="activeMetricTooltipKey && activeMetricTooltipText"
+        :id="`${activeMetricTooltipKey}-panel`"
+        role="tooltip"
+        data-metric-tooltip="true"
+        class="fixed z-[1000] w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-normal leading-5 text-slate-600 shadow-lg"
+        :style="metricTooltipStyle"
+        @mouseenter="cancelCloseMetricTooltip"
+        @mouseleave="scheduleCloseMetricTooltip"
+        @pointerdown.stop
+        @click.stop
+      >
+        {{ activeMetricTooltipText }}
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -387,6 +440,15 @@ const heatmapError = ref('')
 const heatmapNotice = ref('')
 const heatmapLoaded = ref(false)
 const heatmapPoints = ref([])
+const activeMetricTooltipKey = ref('')
+const activeMetricTooltipText = ref('')
+const activeMetricTooltipAnchor = ref(null)
+const metricTooltipStyle = ref({
+  left: '16px',
+  top: '16px',
+  transform: 'translateX(0)',
+})
+const metricTooltipCloseTimer = ref(null)
 const pm25HourlyLoading = ref(false)
 const pm25HourlyError = ref('')
 const pm25HourlyNotice = ref('')
@@ -741,6 +803,107 @@ const greenTrendMetricOptions = [
   { key: 'soil_moisture_0_to_7cm', label: 'Soil Moisture (0-7 cm)' },
 ]
 const selectedGreenTrendMetric = ref('temperature_2m')
+
+// Build a stable key for one tooltip instance in the summary tables.
+const getMetricTooltipKey = (group, metricKey) => `${group}:${metricKey}`
+
+// Return true when the requested metric tooltip is currently open.
+const isMetricTooltipOpen = (group, metricKey) =>
+  activeMetricTooltipKey.value === getMetricTooltipKey(group, metricKey)
+
+// Close any open metric tooltip.
+const closeMetricTooltip = () => {
+  if (metricTooltipCloseTimer.value) {
+    clearTimeout(metricTooltipCloseTimer.value)
+    metricTooltipCloseTimer.value = null
+  }
+  activeMetricTooltipKey.value = ''
+  activeMetricTooltipText.value = ''
+  activeMetricTooltipAnchor.value = null
+}
+
+// Keep tooltip placement in the viewport while anchored to its trigger button.
+const updateMetricTooltipPosition = () => {
+  const anchor = activeMetricTooltipAnchor.value
+  if (!anchor || !(anchor instanceof Element)) {
+    return
+  }
+  const rect = anchor.getBoundingClientRect()
+  const tooltipWidth = Math.min(256, Math.max(160, window.innerWidth - 32))
+  const margin = 16
+  const minCenter = margin + tooltipWidth / 2
+  const maxCenter = window.innerWidth - margin - tooltipWidth / 2
+  const centeredLeft = rect.left + rect.width / 2
+  const clampedLeft = Math.min(Math.max(centeredLeft, minCenter), maxCenter)
+  const showAbove = rect.bottom + 10 + 120 > window.innerHeight
+  metricTooltipStyle.value = {
+    left: `${clampedLeft}px`,
+    top: showAbove ? `${Math.max(margin, rect.top - 8)}px` : `${rect.bottom + 8}px`,
+    transform: showAbove ? 'translate(-50%, -100%)' : 'translateX(-50%)',
+  }
+}
+
+// Cancel any pending delayed close so hover can move between trigger and tooltip.
+const cancelCloseMetricTooltip = () => {
+  if (metricTooltipCloseTimer.value) {
+    clearTimeout(metricTooltipCloseTimer.value)
+    metricTooltipCloseTimer.value = null
+  }
+}
+
+// Delay tooltip close slightly to support hover transitions.
+const scheduleCloseMetricTooltip = () => {
+  cancelCloseMetricTooltip()
+  metricTooltipCloseTimer.value = setTimeout(() => {
+    closeMetricTooltip()
+  }, 120)
+}
+
+// Toggle one metric tooltip on tap/click for touch-friendly behavior.
+const toggleMetricTooltip = (group, metricKey, text, event) => {
+  cancelCloseMetricTooltip()
+  const key = getMetricTooltipKey(group, metricKey)
+  if (activeMetricTooltipKey.value === key) {
+    closeMetricTooltip()
+    return
+  }
+  const target = event?.currentTarget
+  activeMetricTooltipKey.value = key
+  activeMetricTooltipText.value = text || ''
+  activeMetricTooltipAnchor.value = target instanceof Element ? target : null
+  updateMetricTooltipPosition()
+}
+
+// Open one metric tooltip on hover/focus.
+const openMetricTooltip = (group, metricKey, text, event) => {
+  cancelCloseMetricTooltip()
+  const key = getMetricTooltipKey(group, metricKey)
+  const target = event?.currentTarget
+  activeMetricTooltipKey.value = key
+  activeMetricTooltipText.value = text || ''
+  activeMetricTooltipAnchor.value = target instanceof Element ? target : null
+  updateMetricTooltipPosition()
+}
+
+// Dismiss open tooltips when users press outside of the tooltip trigger/panel.
+const closeTooltipOnOutsidePress = (event) => {
+  const target = event?.target
+  if (target instanceof Element && target.closest('[data-metric-tooltip="true"]')) {
+    return
+  }
+  closeMetricTooltip()
+}
+
+const closeTooltipOnAnyScroll = () => {
+  closeMetricTooltip()
+}
+
+const repositionMetricTooltip = () => {
+  if (!activeMetricTooltipKey.value) {
+    return
+  }
+  updateMetricTooltipPosition()
+}
 
 const formatStatValue = (value) => {
   if (!Number.isFinite(value)) {
@@ -2061,7 +2224,18 @@ onMounted(loadHistoricalWeatherTrend)
 onMounted(loadLga)
 onMounted(refreshSubscriptionStatus)
 onMounted(maybeLoadHeatmap)
+onMounted(() => {
+  document.addEventListener('pointerdown', closeTooltipOnOutsidePress)
+  document.addEventListener('scroll', closeTooltipOnAnyScroll, true)
+  window.addEventListener('resize', repositionMetricTooltip)
+})
 onBeforeUnmount(destroyHeatmapMap)
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeTooltipOnOutsidePress)
+  document.removeEventListener('scroll', closeTooltipOnAnyScroll, true)
+  window.removeEventListener('resize', repositionMetricTooltip)
+  closeMetricTooltip()
+})
 watch(
   () => [route.params.suburb, route.query.state],
   () => {
@@ -2074,6 +2248,7 @@ watch(
     loadLga()
     resetHeatmapState()
     resetPm25HourlyState()
+    closeMetricTooltip()
     maybeLoadHeatmap()
   },
 )
@@ -2086,6 +2261,7 @@ watch(
 watch(
   () => activeAirSubtab.value,
   (value) => {
+    closeMetricTooltip()
     if (value === 'recommendations' && !pm25HourlyLoaded.value && !pm25HourlyLoading.value) {
       loadPm25HourlyTrend()
     }
@@ -2102,6 +2278,7 @@ watch(
 watch(
   () => activeGreenSubtab.value,
   (value) => {
+    closeMetricTooltip()
     if (value === 'trend' && !greenTrendLoaded.value && !greenTrendLoading.value) {
       loadHistoricalWeatherTrend()
     }
